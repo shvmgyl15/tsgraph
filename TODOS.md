@@ -1,0 +1,61 @@
+# tsgraph — Implementation Plan
+
+## Phase 1: Project Scaffold
+- [x] Update opencode.json with AGENTS.md reference
+- [x] Create AGENTS.md with project DNA
+- [x] Create TODOS.md (this file)
+- [x] Initialize package.json with dependencies
+- [x] Configure tsconfig.json (strict, ESNext)
+- [x] Setup vitest config
+- [x] Create src directory structure
+
+## Phase 2: Core Data Model
+- [ ] Define graph types (Graph, PackageNode, FileNode, SymbolNode, etc.)
+- [ ] Add JSON serialization / deserialization
+- [ ] Write unit tests for graph types
+
+## Phase 3: Scanner + Parser Core
+- [ ] Implement file scanner (walk tree, gitignore support, file classification)
+- [ ] Implement symbol extractor (ts-morph: functions, classes, interfaces, types, enums, vars)
+- [ ] Implement call expression extractor
+- [ ] Implement import edge + dependency (package.json) extractor
+- [ ] Wire up `build` command end-to-end
+- [ ] Write parser/scanner unit tests
+
+## Phase 4: Query Commands
+- [ ] callers / callees
+- [ ] node / source / query
+- [ ] context (bundle — node + source + callers + callees + tests)
+- [ ] imports / public / focus
+- [ ] Write query command tests
+
+## Phase 5: Next.js / React Extractors
+- [ ] App Router tree detection (page/layout/loading/error/route files)
+- [ ] Pages Router detection
+- [ ] 'use client' / 'use server' + hooks analysis
+- [ ] Route extraction from API / route handlers
+- [ ] Write extractor tests
+
+## Phase 6: Analysis Commands
+- [ ] complexity (cyclomatic)
+- [ ] hotspot / coupling / deps
+- [ ] Write analysis tests
+
+## Phase 7: Graph Traversal
+- [ ] impact (BFS downstream blast radius)
+- [ ] path (BFS shortest path between symbols)
+- [ ] orphans (dead code detection)
+- [ ] trace / errorflow (reverse BFS from string literal)
+- [ ] Write traversal tests
+
+## Phase 8: MCP Server
+- [ ] MCP stdio server wrapping all query tools
+- [ ] Tool definition for each search/query command
+- [ ] MCP integration test
+
+## Phase 9: Advanced Features
+- [ ] boundaries (architecture enforcement via .tsgraph/boundaries.json)
+- [ ] changes / stale (git-aware incremental analysis)
+- [ ] plan / review (change planning reports)
+- [ ] add-claude-plugin (auto-configure Claude Desktop / Code)
+- [ ] GRAPH_REPORT.md generation
