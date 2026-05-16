@@ -167,3 +167,187 @@ export interface Graph {
   errors: ErrorEdge[];
   appRouter?: AppRouterNode;
 }
+
+let _nextId = 0;
+function nextId(): string {
+  return `gen_${++_nextId}`;
+}
+
+export function makeStructField(overrides?: Partial<StructField>): StructField {
+  return { name: "", type: "", ...overrides };
+}
+
+export function makeSymbolNode(overrides?: Partial<SymbolNode>): SymbolNode {
+  return {
+    id: nextId(),
+    kind: "function",
+    name: "",
+    packageName: "",
+    file: "",
+    line: 0,
+    endLine: 0,
+    isExported: false,
+    ...overrides,
+  };
+}
+
+export function makePackageNode(overrides?: Partial<PackageNode>): PackageNode {
+  return {
+    id: nextId(),
+    name: "",
+    importPathBestEffort: "",
+    dir: "",
+    files: [],
+    ...overrides,
+  };
+}
+
+export function makeFileNode(overrides?: Partial<FileNode>): FileNode {
+  return {
+    id: nextId(),
+    path: "",
+    packageName: "",
+    lines: 0,
+    generated: false,
+    ...overrides,
+  };
+}
+
+export function makeCallEdge(overrides?: Partial<CallEdge>): CallEdge {
+  return {
+    callerSymbolId: "",
+    callerName: "",
+    calleeRaw: "",
+    file: "",
+    line: 0,
+    ...overrides,
+  };
+}
+
+export function makeImportEdge(overrides?: Partial<ImportEdge>): ImportEdge {
+  return {
+    fromFile: "",
+    fromPackage: "",
+    importPath: "",
+    isDefault: false,
+    ...overrides,
+  };
+}
+
+export function makeDependency(overrides?: Partial<Dependency>): Dependency {
+  return { module: "", version: "", ...overrides };
+}
+
+export function makeHTTPRoute(overrides?: Partial<HTTPRoute>): HTTPRoute {
+  return { method: "", path: "", handler: "", file: "", line: 0, ...overrides };
+}
+
+export function makeEnvRead(overrides?: Partial<EnvRead>): EnvRead {
+  return { key: "", accessor: "", file: "", line: 0, ...overrides };
+}
+
+export function makeConcurrencyNode(overrides?: Partial<ConcurrencyNode>): ConcurrencyNode {
+  return {
+    kind: "async_function",
+    functionName: "",
+    file: "",
+    line: 0,
+    ...overrides,
+  };
+}
+
+export function makeTestEdge(overrides?: Partial<TestEdge>): TestEdge {
+  return { testFunc: "", target: "", file: "", line: 0, ...overrides };
+}
+
+export function makeImplementsEdge(overrides?: Partial<ImplementsEdge>): ImplementsEdge {
+  return { interface: "", concrete: "", ...overrides };
+}
+
+export function makeMutationEdge(overrides?: Partial<MutationEdge>): MutationEdge {
+  return { field: "", functionName: "", file: "", line: 0, ...overrides };
+}
+
+export function makeErrorEdge(overrides?: Partial<ErrorEdge>): ErrorEdge {
+  return { message: "", functionName: "", file: "", line: 0, ...overrides };
+}
+
+export function makeAppRouterNode(overrides?: Partial<AppRouterNode>): AppRouterNode {
+  return {
+    path: "",
+    dir: "",
+    files: {},
+    children: [],
+    ...overrides,
+  };
+}
+
+export function makeGraph(overrides?: Partial<Graph>): Graph {
+  return {
+    version: GRAPH_VERSION,
+    generatedAt: new Date().toISOString(),
+    root: "",
+    packages: [],
+    files: [],
+    symbols: [],
+    imports: [],
+    calls: [],
+    envReads: [],
+    dependencies: [],
+    routes: [],
+    concurrency: [],
+    testEdges: [],
+    implements: [],
+    mutations: [],
+    errors: [],
+    ...overrides,
+  };
+}
+
+const ARRAY_KEYS: (keyof Graph)[] = [
+  "packages", "files", "symbols", "imports", "calls",
+  "envReads", "dependencies", "routes", "concurrency",
+  "testEdges", "implements", "mutations", "errors",
+];
+
+function isGraph(value: unknown): value is Graph {
+  if (value === null || value === undefined) return false;
+  if (typeof value !== "object") return false;
+  const obj = value as Record<string, unknown>;
+  if (typeof obj.version !== "string") return false;
+  if (typeof obj.generatedAt !== "string") return false;
+  if (typeof obj.root !== "string") return false;
+  for (const key of ARRAY_KEYS) {
+    if (!Array.isArray(obj[key])) return false;
+  }
+  return true;
+}
+
+export function serialize(graph: Graph): string {
+  if (graph.version !== GRAPH_VERSION) {
+    throw new Error(
+      `Graph version mismatch: expected ${GRAPH_VERSION}, got ${graph.version}`,
+    );
+  }
+  return JSON.stringify(graph, null, 2);
+}
+
+export function deserialize(json: string): Graph {
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(json);
+  } catch (e) {
+    throw new Error(`Invalid JSON: ${(e as Error).message}`);
+  }
+  if (!isGraph(parsed)) {
+    throw new Error(
+      "Invalid graph structure: missing or invalid required fields",
+    );
+  }
+  if (parsed.version !== GRAPH_VERSION) {
+    throw new Error(
+      `Graph version mismatch: expected ${GRAPH_VERSION}, got ${parsed.version}`,
+    );
+  }
+  return parsed;
+}

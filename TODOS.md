@@ -10,17 +10,17 @@
 - [x] Create src directory structure
 
 ## Phase 2: Core Data Model
-- [ ] Define graph types (Graph, PackageNode, FileNode, SymbolNode, etc.)
-- [ ] Add JSON serialization / deserialization
-- [ ] Write unit tests for graph types
+- [x] Define graph types (Graph, PackageNode, FileNode, SymbolNode, etc.)
+- [x] Add JSON serialization / deserialization
+- [x] Write unit tests for graph types
 
 ## Phase 3: Scanner + Parser Core
-- [ ] Implement file scanner (walk tree, gitignore support, file classification)
-- [ ] Implement symbol extractor (ts-morph: functions, classes, interfaces, types, enums, vars)
-- [ ] Implement call expression extractor
-- [ ] Implement import edge + dependency (package.json) extractor
-- [ ] Wire up `build` command end-to-end
-- [ ] Write parser/scanner unit tests
+- [x] Implement file scanner (walk tree, gitignore support, file classification)
+- [x] Implement symbol extractor (ts-morph: functions, classes, interfaces, types, enums, vars)
+- [x] Implement call expression extractor
+- [x] Implement import edge + dependency (package.json) extractor
+- [x] Wire up `build` command end-to-end
+- [x] Write parser/scanner unit tests
 
 ## Phase 4: Query Commands
 - [ ] callers / callees
