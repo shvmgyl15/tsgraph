@@ -3,7 +3,7 @@ import path from "node:path";
 
 const MCP_SERVER_CONFIG = {
   command: "npx",
-  args: ["tsgraph", "mcp"],
+  args: ["@shvmgyl15/tsgraph", "mcp"],
 };
 
 const AGENT_CONFIG = {

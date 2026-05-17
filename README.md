@@ -1,4 +1,4 @@
-# tsgraph-mcp
+# @shvmgyl15/tsgraph
 
 A fast, local-only CLI tool that indexes TypeScript/React/Next.js codebases using AST parsing into a queryable graph.json for AI coding agents.
 
@@ -7,10 +7,10 @@ No network calls, no telemetry, no SaaS backend.
 ## Install
 
 ```bash
-npm install -g tsgraph-mcp
+npm install -g @shvmgyl15/tsgraph
 
 # Or use directly via npx:
-npx tsgraph-mcp build .
+npx @shvmgyl15/tsgraph build .
 ```
 
 ## Quick Start
@@ -18,25 +18,25 @@ npx tsgraph-mcp build .
 ```bash
 # Index your project
 cd my-project
-tsgraph-mcp build .
+tsgraph build .
 
 # Query the graph
-tsgraph-mcp query "getUser"          # search symbols
-tsgraph-mcp callers "getUser"        # who calls getUser
-tsgraph-mcp callees "getUser"        # what getUser calls
-tsgraph-mcp node "getUser"           # symbol details
-tsgraph-mcp source "getUser"         # symbol source code
+tsgraph query "getUser"          # search symbols
+tsgraph callers "getUser"        # who calls getUser
+tsgraph callees "getUser"        # what getUser calls
+tsgraph node "getUser"           # symbol details
+tsgraph source "getUser"         # symbol source code
 
 # Analysis
-tsgraph-mcp hotspots                 # files needing refactoring
-tsgraph-mcp complexity --sort        # cyclomatic complexity
-tsgraph-mcp orphans                  # dead code detection
-tsgraph-mcp coupling                 # package dependency coupling
+tsgraph hotspots                 # files needing refactoring
+tsgraph complexity --sort        # cyclomatic complexity
+tsgraph orphans                  # dead code detection
+tsgraph coupling                 # package dependency coupling
 
 # Traversal
-tsgraph-mcp impact "getUser"         # downstream blast radius
-tsgraph-mcp path "foo" "bar"         # shortest call path
-tsgraph-mcp trace "error msg"        # trace string literal upstream
+tsgraph impact "getUser"         # downstream blast radius
+tsgraph path "foo" "bar"         # shortest call path
+tsgraph trace "error msg"        # trace string literal upstream
 ```
 
 ## All Commands
@@ -71,7 +71,7 @@ tsgraph-mcp trace "error msg"        # trace string literal upstream
 
 ## Next.js Support
 
-tsgraph-mcp automatically detects Next.js project structure:
+@shvmgyl15/tsgraph automatically detects Next.js project structure:
 
 - **App Router**: `page.tsx`, `layout.tsx`, `loading.tsx`, `error.tsx`, `route.ts`
 - **Pages Router**: `pages/` directory structure
@@ -94,7 +94,7 @@ Define layer rules in `.tsgraph/boundaries.json`:
 ```
 
 ```bash
-tsgraph-mcp boundaries
+tsgraph boundaries
 ```
 
 ## AI Agent Integration
@@ -102,16 +102,16 @@ tsgraph-mcp boundaries
 ### opencode
 
 ```bash
-tsgraph-mcp add-opencode-plugin
+tsgraph add-opencode-plugin
 ```
 Updates `opencode.json` with the tsgraph MCP server and creates `.opencode/agents/tsgraph.json`.
 
 ### Claude / Any MCP Client
 
 ```bash
-tsgraph-mcp mcp
+tsgraph mcp
 ```
-Starts an MCP stdio server exposing all query/search commands as tools. Configure your MCP client to launch `tsgraph-mcp mcp` as a subprocess.
+Starts an MCP stdio server exposing all query/search commands as tools. Configure your MCP client to launch `tsgraph mcp` as a subprocess.
 
 ## Development
 
