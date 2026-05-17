@@ -30,11 +30,11 @@
 - [x] Write query command tests
 
 ## Phase 5: Next.js / React Extractors
-- [ ] App Router tree detection (page/layout/loading/error/route files)
-- [ ] Pages Router detection
-- [ ] 'use client' / 'use server' + hooks analysis
-- [ ] Route extraction from API / route handlers
-- [ ] Write extractor tests
+- [x] App Router tree detection (page/layout/loading/error/route files)
+- [x] Pages Router detection
+- [x] 'use client' / 'use server' + hooks analysis
+- [x] Route extraction from API / route handlers
+- [x] Write extractor tests
 
 ## Phase 6: Analysis Commands
 - [ ] complexity (cyclomatic)

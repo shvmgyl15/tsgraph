@@ -17,6 +17,7 @@ import type {
 } from "../graph/types.js";
 import { GRAPH_VERSION } from "../graph/types.js";
 import type { ScannedFile } from "../scanner/index.js";
+import { extractNextJs } from "../nextjs/index.js";
 
 function symbolId(file: string, name: string): string {
   return `${file}::${name}`;
@@ -332,22 +333,7 @@ export function parseProject(rootDir: string, scanned: ScannedFile[]): Graph {
 
   const dependencies = readDependencies(rootDir);
 
-  return {
-    version: GRAPH_VERSION,
-    generatedAt: new Date().toISOString(),
-    root: rootDir,
-    packages: [rootPackage],
-    files: fileNodes,
-    symbols: allSymbols,
-    imports: allImports,
-    calls: allCalls,
-    envReads: [],
-    dependencies,
-    routes: [],
-    concurrency: [],
-    testEdges: [],
-    implements: [],
-    mutations: [],
-    errors: [],
-  };
+  const baseGraph = { version: GRAPH_VERSION, generatedAt: new Date().toISOString(), root: rootDir, packages: [rootPackage], files: fileNodes, symbols: allSymbols, imports: allImports, calls: allCalls, envReads: [], dependencies, routes: [], concurrency: [], testEdges: [], implements: [], mutations: [], errors: [] };
+
+  return extractNextJs(baseGraph, rootDir, scanned);
 }
