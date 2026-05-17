@@ -1,6 +1,18 @@
 import type { Graph } from "../graph/types.js";
+import fs from "node:fs";
+import path from "node:path";
+import { analyzeCoupling, findHotspots } from "../analysis/index.js";
+import { checkBoundaries, loadBoundariesConfig } from "../boundaries/index.js";
+import { getStale } from "../changes/index.js";
 
-export function generateReport(graph: Graph): string {
+export interface ReportOptions {
+  rootDir?: string;
+  includeBoundaries?: boolean;
+  includeStale?: boolean;
+  includeHotspots?: boolean;
+}
+
+export function generateReport(graph: Graph, opts: ReportOptions = {}): string {
   const lines: string[] = [];
 
   lines.push("# tsgraph Report");
@@ -37,6 +49,72 @@ export function generateReport(graph: Graph): string {
     lines.push(`- **${kind}**: ${count}`);
   }
   lines.push("");
+
+  if (opts.includeHotspots) {
+    lines.push("## Hotspots");
+    lines.push("");
+    const hotspots = findHotspots(graph, 10);
+    if (hotspots.length > 0) {
+      lines.push("| File | Score | Complexity | Lines |");
+      lines.push("| --- | --- | --- | --- |");
+      for (const h of hotspots) {
+        lines.push(`| \`${h.file}\` | ${h.score} | ${h.totalComplexity} | ${h.lines} |`);
+      }
+      lines.push("");
+    }
+  }
+
+  if (opts.includeBoundaries && opts.rootDir) {
+    const config = loadBoundariesConfig(opts.rootDir);
+    if (config) {
+      const result = checkBoundaries(graph, config);
+      lines.push("## Architecture Boundaries");
+      lines.push("");
+      lines.push(`- Layers: ${config.layers.map((l) => l.name).join(", ")}`);
+      lines.push(`- Allowed imports: ${result.allowed}`);
+      lines.push(`- Violations: ${result.violations.length}`);
+      if (result.violations.length > 0) {
+        lines.push("");
+        for (const v of result.violations.slice(0, 20)) {
+          lines.push(`- ❌ \`${v.fromFile}\` → \`${v.toFile}\`: ${v.rule}`);
+        }
+        if (result.violations.length > 20) {
+          lines.push(`- ... and ${result.violations.length - 20} more`);
+        }
+      }
+      lines.push("");
+    }
+  }
+
+  if (opts.includeStale && opts.rootDir) {
+    const stale = getStale(graph, opts.rootDir, 90);
+    if (stale.totalFiles > 0) {
+      lines.push("## Stale Files");
+      lines.push("");
+      lines.push(`Files untouched in 90+ days: ${stale.totalFiles}`);
+      for (const f of stale.files.slice(0, 20)) {
+        lines.push(`- \`${f.path}\` — ${f.symbolCount} symbol(s)`);
+      }
+      if (stale.files.length > 20) {
+        lines.push(`- ... and ${stale.files.length - 20} more`);
+      }
+      lines.push("");
+    }
+  }
+
+  if (graph.packages.length > 1) {
+    lines.push("## Coupling");
+    lines.push("");
+    const coupling = analyzeCoupling(graph).slice(0, 15);
+    if (coupling.length > 0) {
+      lines.push("| Package | Coupled To | Imports | Files |");
+      lines.push("| --- | --- | --- | --- |");
+      for (const c of coupling) {
+        lines.push(`| ${c.packageName} | ${c.coupledTo} | ${c.importCount} | ${c.fileCount} |`);
+      }
+      lines.push("");
+    }
+  }
 
   lines.push("## Summary");
   lines.push("");

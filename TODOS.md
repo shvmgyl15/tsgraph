@@ -54,8 +54,8 @@
 - [x] MCP integration test
 
 ## Phase 9: Advanced Features
-- [ ] boundaries (architecture enforcement via .tsgraph/boundaries.json)
-- [ ] changes / stale (git-aware incremental analysis)
-- [ ] plan / review (change planning reports)
-- [ ] add-claude-plugin (auto-configure Claude Desktop / Code)
-- [ ] GRAPH_REPORT.md generation
+- [x] boundaries (architecture enforcement via .tsgraph/boundaries.json)
+- [x] changes / stale (git-aware incremental analysis)
+- [x] plan / review (change planning reports)
+- [x] add-opencode-plugin (auto-configure opencode MCP + agent)
+- [x] Enhanced GRAPH_REPORT.md (hotspots, boundaries, coupling, stale)

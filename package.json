@@ -1,5 +1,5 @@
 {
-  "name": "tsgraph",
+  "name": "tsgraph-mcp",
   "version": "0.1.0",
   "description": "Local AST-based TypeScript/React/Next.js codebase indexer for AI coding agents",
   "license": "MIT",

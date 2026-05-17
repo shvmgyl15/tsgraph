@@ -34,6 +34,13 @@ import {
 } from "../traversal/index.js";
 import type { ImpactNode } from "../traversal/index.js";
 import { startMcpServer } from "../mcp/server.js";
+import {
+  checkBoundaries,
+  loadBoundariesConfig,
+} from "../boundaries/index.js";
+import { getChanges, getStale } from "../changes/index.js";
+import { generatePlan, generateReview } from "../plan/index.js";
+import { addOpencodePlugin } from "../opencode/index.js";
 
 const program = new Command();
 
@@ -74,7 +81,16 @@ program
     fs.writeFileSync(graphPath, serialize(graph), "utf-8");
 
     const reportPath = path.join(outDir, "GRAPH_REPORT.md");
-    fs.writeFileSync(reportPath, generateReport(graph), "utf-8");
+    fs.writeFileSync(
+      reportPath,
+      generateReport(graph, {
+        rootDir,
+        includeBoundaries: true,
+        includeStale: true,
+        includeHotspots: true,
+      }),
+      "utf-8",
+    );
 
     const fileCount = graph.files.length;
     const symbolCount = graph.symbols.length;
@@ -494,87 +510,39 @@ function printImpactTree(results: ImpactNode[], symbolName: string) {
     for (const n of nodes) {
       const prefix = "  ".repeat(depth);
       console.log(`${prefix}${n.symbol.name} (depth ${depth}, ${n.symbol.file}:${n.symbol.line})`);
+      }
     }
   }
-}
 
 program
-  .command("impact <symbol>")
-  .description("Show downstream blast radius (callers, recursively)")
-  .option("-d, --depth <number>", "Max traversal depth", "5")
-  .option("-j, --json", "Output as JSON")
-  .action((symbol: string, opts: { depth?: string; json?: boolean }) => {
-    try {
-      const graph = loadGraphFromCwd();
-      const maxDepth = parseInt(opts.depth ?? "5", 10);
-      const results = impact(graph, symbol, maxDepth);
-
-      if (opts.json) {
-        console.log(JSON.stringify(results, null, 2));
-        return;
-      }
-
-      if (results.length === 0) {
-        console.log(`No impact found for "${symbol}".`);
-        return;
-      }
-
-      printImpactTree(results, symbol);
-    } catch (err) {
-      handleError(err);
-    }
-  });
-
-program
-  .command("path <from> <to>")
-  .description("Find shortest call path between two symbols")
-  .option("-d, --depth <number>", "Max search depth", "10")
-  .option("-j, --json", "Output as JSON")
-  .action((from: string, to: string, opts: { depth?: string; json?: boolean }) => {
-    try {
-      const graph = loadGraphFromCwd();
-      const maxDepth = parseInt(opts.depth ?? "10", 10);
-      const p = findPath(graph, from, to, maxDepth);
-
-      if (opts.json) {
-        console.log(JSON.stringify(p, null, 2));
-        return;
-      }
-
-      if (!p) {
-        console.log(`No path found from "${from}" to "${to}".`);
-        return;
-      }
-
-      console.log(`Path from "${from}" to "${to}":`);
-      console.log(`  ${p.map((n) => n.name).join(" → ")}`);
-    } catch (err) {
-      handleError(err);
-    }
-  });
-
-program
-  .command("orphans")
-  .description("Find dead code — symbols with no callers or tests")
+  .command("boundaries")
+  .description("Check architecture boundaries defined in .tsgraph/boundaries.json")
   .option("-j, --json", "Output as JSON")
   .action((opts: { json?: boolean }) => {
     try {
       const graph = loadGraphFromCwd();
-      const results = findOrphans(graph);
+      const config = loadBoundariesConfig(process.cwd());
+      if (!config) {
+        console.log("No .tsgraph/boundaries.json found.");
+        return;
+      }
+      const result = checkBoundaries(graph, config);
 
       if (opts.json) {
-        console.log(JSON.stringify(results, null, 2));
+        console.log(JSON.stringify(result, null, 2));
         return;
       }
 
-      if (results.length === 0) {
-        console.log("No orphans found.");
-        return;
-      }
-
-      console.log(`Orphans (${results.length}):`);
-      for (const r of results) {
-        console.log(`  ${r.symbol.name.padEnd(20)} ${r.symbol.file}:${r.symbol.line}  (${r.reason})`);
+      console.log(`Boundary check: ${result.violations.length} violation(s), ${result.allowed} allowed`);
+      console.log(`Layers: ${config.layers.map((l) => l.name).join(", ")}`);
+      console.log("");
+      if (result.violations.length > 0) {
+        console.log("Violations:");
+        for (const v of result.violations) {
+          console.log(`  ❌ ${v.fromFile} → ${v.toFile}: ${v.rule}`);
+        }
+      } else {
+        console.log("All imports respect layer boundaries.");
       }
     } catch (err) {
       handleError(err);
@@ -582,39 +550,173 @@ program
   });
 
 program
-  .command("trace <string>")
-  .description("Find a string literal across symbols and trace callers upstream")
-  .option("-d, --depth <number>", "Max caller depth", "5")
+  .command("changes")
+  .description("Show files and symbols changed vs a base branch")
+  .option("--base <branch>", "Base branch to compare against", "main")
   .option("-j, --json", "Output as JSON")
-  .action((searchString: string, opts: { depth?: string; json?: boolean }) => {
+  .action((opts: { base?: string; json?: boolean }) => {
     try {
       const graph = loadGraphFromCwd();
-      const maxDepth = parseInt(opts.depth ?? "5", 10);
-      const results = trace(graph, searchString, maxDepth);
+      const result = getChanges(graph, process.cwd(), opts.base ?? "main");
 
       if (opts.json) {
-        console.log(JSON.stringify(results, null, 2));
+        console.log(JSON.stringify(result, null, 2));
         return;
       }
 
-      if (results.length === 0) {
-        console.log(`No matches found for "${searchString}".`);
+      if (result.totalFiles === 0) {
+        console.log("No changes found.");
         return;
       }
 
-      console.log(`Trace of "${searchString}" (${results.length} occurrences):`);
-      for (let i = 0; i < results.length; i++) {
-        const t = results[i];
-        console.log(`  [${i + 1}] ${t.match.file}:${t.match.line} — ${t.match.symbol.name}`);
-        console.log(`       ${t.match.contextLine}`);
-        if (t.callers.length > 0) {
-          for (const c of t.callers) {
-            const prefix = "  ".repeat(1 + c.depth);
-            console.log(`${prefix}↑ ${c.symbol.name} (${c.symbol.file}:${c.symbol.line})`);
+      console.log(`Changes vs "${opts.base}" (${result.totalFiles} files, ${result.totalSymbols} symbols):`);
+      for (const f of result.files) {
+        const status = f.status === "added" ? "+" : f.status === "deleted" ? "-" : "M";
+        console.log(`  ${status} ${f.path} (${f.symbolCount} symbols)`);
+      }
+    } catch (err) {
+      handleError(err);
+    }
+  });
+
+program
+  .command("stale")
+  .description("Show files not modified in N days")
+  .option("--days <number>", "Staleness threshold in days", "90")
+  .option("-j, --json", "Output as JSON")
+  .action((opts: { days?: string; json?: boolean }) => {
+    try {
+      const graph = loadGraphFromCwd();
+      const days = parseInt(opts.days ?? "90", 10);
+      const result = getStale(graph, process.cwd(), days);
+
+      if (opts.json) {
+        console.log(JSON.stringify(result, null, 2));
+        return;
+      }
+
+      if (result.totalFiles === 0) {
+        console.log("No stale files found.");
+        return;
+      }
+
+      console.log(`Stale files (${days}+ days, ${result.totalFiles} total):`);
+      for (const f of result.files) {
+        console.log(`  ${f.path} — ${f.symbolCount} symbol(s): ${f.symbolNames.join(", ")}`);
+      }
+    } catch (err) {
+      handleError(err);
+    }
+  });
+
+program
+  .command("plan")
+  .description("Generate a change plan showing blast radius for given files/symbols")
+  .argument("<files...>", "Files being changed")
+  .option("-s, --symbols <symbols>", "Comma-separated symbols being changed")
+  .option("--md", "Output as Markdown")
+  .action((files: string[], opts: { symbols?: string; md?: boolean }) => {
+    try {
+      const graph = loadGraphFromCwd();
+      const symbols = opts.symbols ? opts.symbols.split(",").map((s) => s.trim()).filter(Boolean) : [];
+      const result = generatePlan(graph, files, symbols);
+
+      if (opts.md) {
+        console.log(`## Change Plan`);
+        console.log(``);
+        console.log(`${result.summary}`);
+        console.log(``);
+        console.log(`### Files Changed`);
+        for (const f of result.changes.files) {
+          console.log(`- \`${f}\``);
+        }
+        console.log(``);
+        console.log(`### Symbols Changed`);
+        for (const s of result.changes.symbols) {
+          console.log(`- \`${s}\``);
+        }
+        console.log(``);
+        console.log(`### Affected Files`);
+        for (const f of result.affectedFiles) {
+          console.log(`- \`${f}\``);
+        }
+        console.log(``);
+        console.log(`### Caller Impact`);
+        for (const c of result.affectedCallers) {
+          console.log(`- \`${c.symbol.name}\` — ${c.callerCount} caller(s) at ${c.symbol.file}:${c.symbol.line}`);
+        }
+        return;
+      }
+
+      console.log(result.summary);
+      console.log("");
+      console.log(`Files changed: ${result.changes.files.length}`);
+      for (const f of result.changes.files) {
+        console.log(`  ${f}`);
+      }
+      console.log(`Symbols changed: ${result.changes.symbols.length}`);
+      for (const s of result.changes.symbols) {
+        const sym = graph.symbols.find((n) => n.name === s);
+        if (sym) console.log(`  ${sym.kind} ${s} — ${sym.file}:${sym.line}`);
+      }
+      console.log(`Affected files: ${result.affectedFiles.length}`);
+    } catch (err) {
+      handleError(err);
+    }
+  });
+
+program
+  .command("review")
+  .description("Generate a code review summary vs a base branch")
+  .option("--base <branch>", "Base branch to compare against", "main")
+  .option("--md", "Output as Markdown")
+  .action((opts: { base?: string; md?: boolean }) => {
+    try {
+      const graph = loadGraphFromCwd();
+      const result = generateReview(graph, process.cwd(), opts.base ?? "main");
+
+      if (opts.md) {
+        console.log(`## Code Review`);
+        console.log(``);
+        console.log(`${result.summary}`);
+        console.log(``);
+        if (result.findings.length > 0) {
+          console.log(`### Findings`);
+          for (const f of result.findings) {
+            const icon = f.type === "orphan" ? "💀" : f.type === "boundary" ? "🚫" : "📦";
+            console.log(`- ${icon} \`${f.type}\`: ${f.detail}`);
           }
         }
-        if (i < results.length - 1) console.log("");
+        return;
       }
+
+      console.log(result.summary);
+      if (result.findings.length > 0) {
+        console.log("");
+        console.log("Findings:");
+        for (const f of result.findings) {
+          console.log(`  [${f.type}] ${f.detail}`);
+        }
+      }
+    } catch (err) {
+      handleError(err);
+    }
+  });
+
+program
+  .command("add-opencode-plugin")
+  .description("Configure opencode to use tsgraph (updates opencode.json, creates .opencode/agents/tsgraph.json)")
+  .action(() => {
+    try {
+      const result = addOpencodePlugin(process.cwd());
+      if (result.errors.length > 0) {
+        for (const err of result.errors) {
+          console.error("Error:", err);
+        }
+      }
+      if (result.opencodeJsonUpdated) console.log("✓ Updated opencode.json with tsgraph MCP server");
+      if (result.agentCreated) console.log("✓ Created .opencode/agents/tsgraph.json");
+      if (result.errors.length === 0) console.log("Done.");
     } catch (err) {
       handleError(err);
     }
