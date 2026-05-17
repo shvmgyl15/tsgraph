@@ -23,11 +23,11 @@
 - [x] Write parser/scanner unit tests
 
 ## Phase 4: Query Commands
-- [ ] callers / callees
-- [ ] node / source / query
-- [ ] context (bundle — node + source + callers + callees + tests)
-- [ ] imports / public / focus
-- [ ] Write query command tests
+- [x] callers / callees
+- [x] node / source / query
+- [x] context (bundle — node + source + callers + callees + tests)
+- [x] imports / public / focus
+- [x] Write query command tests
 
 ## Phase 5: Next.js / React Extractors
 - [ ] App Router tree detection (page/layout/loading/error/route files)
