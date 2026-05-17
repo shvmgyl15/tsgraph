@@ -7,6 +7,21 @@
   "bin": {
     "tsgraph": "./dist/cli/index.js"
   },
+  "files": [
+    "dist/",
+    "README.md"
+  ],
+  "publishConfig": {
+    "access": "public"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/shvmgyl15/tsgraph.git"
+  },
+  "bugs": {
+    "url": "https://github.com/shvmgyl15/tsgraph/issues"
+  },
+  "homepage": "https://github.com/shvmgyl15/tsgraph#readme",
   "scripts": {
     "build": "tsc",
     "dev": "tsx src/cli/index.ts",
