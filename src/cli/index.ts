@@ -19,6 +19,13 @@ import {
   focusPackage,
   context,
 } from "../search/index.js";
+import {
+  analyzeComplexity,
+  findHotspots,
+  analyzeCoupling,
+  dependencyTree,
+} from "../analysis/index.js";
+import type { DepsNode } from "../analysis/index.js";
 
 const program = new Command();
 
@@ -312,6 +319,155 @@ program
         }
         console.log("");
       }
+    } catch (err) {
+      handleError(err);
+    }
+  });
+
+function printDepsTree(node: DepsNode, prefix: string = "", isLast: boolean = true) {
+  const connector = isLast ? "└── " : "├── ";
+  console.log(`${prefix}${connector}${node.name} (${node.kind}, ${node.file}:${node.line})`);
+  const childPrefix = prefix + (isLast ? "    " : "│   ");
+  for (let i = 0; i < node.children.length; i++) {
+    printDepsTree(node.children[i], childPrefix, i === node.children.length - 1);
+  }
+}
+
+program
+  .command("complexity [file]")
+  .description("Show cyclomatic complexity for functions and methods")
+  .option("-s, --sort", "Sort by complexity descending")
+  .option("-m, --min <number>", "Minimum complexity threshold")
+  .option("-j, --json", "Output as JSON")
+  .action((file: string | undefined, opts: { sort?: boolean; min?: string; json?: boolean }) => {
+    try {
+      const graph = loadGraphFromCwd();
+      const results = analyzeComplexity(graph, file);
+
+      if (opts.json) {
+        console.log(JSON.stringify(results, null, 2));
+        return;
+      }
+
+      if (results.length === 0) {
+        console.log("No functions or methods found.");
+        return;
+      }
+
+      let filtered = results;
+      if (opts.min) {
+        const threshold = parseInt(opts.min, 10);
+        filtered = results.filter((r) => r.complexity >= threshold);
+      }
+
+      if (opts.sort) {
+        filtered.sort((a, b) => b.complexity - a.complexity);
+      }
+
+      const maxNameLen = Math.max(...filtered.map((r) => r.symbol.name.length), 6);
+      const header = `${"Symbol".padEnd(maxNameLen)}  Complexity  File:Line`;
+      console.log(header);
+      console.log("─".repeat(header.length));
+      for (const r of filtered) {
+        const receiver = r.symbol.receiver ? `${r.symbol.receiver}.` : "";
+        console.log(
+          `${(receiver + r.symbol.name).padEnd(maxNameLen)}  ${String(r.complexity).padStart(9)}  ${r.symbol.file}:${r.symbol.line}`,
+        );
+      }
+    } catch (err) {
+      handleError(err);
+    }
+  });
+
+program
+  .command("hotspot")
+  .description("Rank files by complexity × size (hotness score)")
+  .option("-t, --top <number>", "Number of results", "10")
+  .option("-j, --json", "Output as JSON")
+  .action((opts: { top?: string; json?: boolean }) => {
+    try {
+      const graph = loadGraphFromCwd();
+      const topN = parseInt(opts.top ?? "10", 10);
+      const hotspots = findHotspots(graph, topN);
+
+      if (opts.json) {
+        console.log(JSON.stringify(hotspots, null, 2));
+        return;
+      }
+
+      if (hotspots.length === 0) {
+        console.log("No hotspots found.");
+        return;
+      }
+
+      const header = "File                                                 Score    Symbols  Complexity  Lines";
+      console.log(header);
+      console.log("─".repeat(header.length));
+      for (const h of hotspots) {
+        console.log(
+          `${h.file.padEnd(52)} ${String(h.score).padStart(7)} ${String(h.symbolCount).padStart(8)} ${String(h.totalComplexity).padStart(11)} ${String(h.lines).padStart(6)}`,
+        );
+      }
+    } catch (err) {
+      handleError(err);
+    }
+  });
+
+program
+  .command("coupling")
+  .description("Show package coupling based on import edges")
+  .option("-p, --package <name>", "Filter to a specific package")
+  .option("-j, --json", "Output as JSON")
+  .action((opts: { package?: string; json?: boolean }) => {
+    try {
+      const graph = loadGraphFromCwd();
+      let results = analyzeCoupling(graph);
+
+      if (opts.package) {
+        results = results.filter((r) => r.packageName === opts.package);
+      }
+
+      if (opts.json) {
+        console.log(JSON.stringify(results, null, 2));
+        return;
+      }
+
+      if (results.length === 0) {
+        console.log("No coupling data found.");
+        return;
+      }
+
+      const header = "Package       Coupled To        Imports  Files";
+      console.log(header);
+      console.log("─".repeat(header.length));
+      for (const r of results) {
+        console.log(
+          `${r.packageName.padEnd(14)} ${r.coupledTo.padEnd(18)} ${String(r.importCount).padStart(7)} ${String(r.fileCount).padStart(6)}`,
+        );
+      }
+    } catch (err) {
+      handleError(err);
+    }
+  });
+
+program
+  .command("deps <symbol>")
+  .description("Show the call dependency tree for a symbol")
+  .option("-d, --depth <number>", "Max tree depth", "3")
+  .action((symbol: string, opts: { depth?: string }) => {
+    try {
+      const graph = loadGraphFromCwd();
+      const maxDepth = parseInt(opts.depth ?? "3", 10);
+      const tree = dependencyTree(graph, symbol, maxDepth);
+
+      if (!tree) {
+        console.log(`Symbol "${symbol}" not found.`);
+        return;
+      }
+
+      console.log(`Dependency tree for "${symbol}" (depth ${maxDepth}):`);
+      console.log("");
+      printDepsTree(tree);
     } catch (err) {
       handleError(err);
     }

@@ -37,9 +37,9 @@
 - [x] Write extractor tests
 
 ## Phase 6: Analysis Commands
-- [ ] complexity (cyclomatic)
-- [ ] hotspot / coupling / deps
-- [ ] Write analysis tests
+- [x] complexity (cyclomatic)
+- [x] hotspot / coupling / deps
+- [x] Write analysis tests
 
 ## Phase 7: Graph Traversal
 - [ ] impact (BFS downstream blast radius)
