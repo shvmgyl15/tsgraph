@@ -30,7 +30,7 @@ describe("addOpencodePlugin", () => {
 
     const config = readJson(configPath);
     expect(config["mcpServers"]).toEqual({
-      tsgraph: { command: "npx", args: ["tsgraph", "mcp"] },
+      tsgraph: { command: "npx", args: ["@shvmgyl15/tsgraph", "mcp"] },
     });
     teardown();
   });
@@ -52,7 +52,7 @@ describe("addOpencodePlugin", () => {
     expect((config["mcpServers"] as Record<string, unknown>)["other"]).toEqual({ command: "other" });
     expect((config["mcpServers"] as Record<string, unknown>)["tsgraph"]).toEqual({
       command: "npx",
-      args: ["tsgraph", "mcp"],
+      args: ["@shvmgyl15/tsgraph", "mcp"],
     });
     teardown();
   });

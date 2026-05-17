@@ -27,6 +27,8 @@
 - [x] node / source / query
 - [x] context (bundle — node + source + callers + callees + tests)
 - [x] imports / public / focus
+- [x] impact / path / orphans / trace (CLI commands)
+- [x] query regex support (fallback to substring)
 - [x] Write query command tests
 
 ## Phase 5: Next.js / React Extractors
@@ -52,6 +54,7 @@
 - [x] MCP stdio server wrapping all query tools
 - [x] Tool definition for each search/query command
 - [x] MCP integration test
+- [x] `--root` flag for running MCP server against any project
 
 ## Phase 9: Advanced Features
 - [x] boundaries (architecture enforcement via .tsgraph/boundaries.json)
@@ -59,3 +62,4 @@
 - [x] plan / review (change planning reports)
 - [x] add-opencode-plugin (auto-configure opencode MCP + agent)
 - [x] Enhanced GRAPH_REPORT.md (hotspots, boundaries, coupling, stale)
+- [x] Incremental builds (file mtime tracking, skip rebuild when unchanged)

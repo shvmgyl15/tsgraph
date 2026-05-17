@@ -98,13 +98,23 @@ export function querySymbols(
   graph: Graph,
   pattern: string,
 ): SymbolNode[] {
-  const lower = pattern.toLowerCase();
-  return graph.symbols.filter(
-    (s) =>
-      s.name.toLowerCase().includes(lower) ||
-      s.file.toLowerCase().includes(lower) ||
-      s.packageName.toLowerCase().includes(lower),
-  );
+  try {
+    const re = new RegExp(pattern, "i");
+    return graph.symbols.filter(
+      (s) =>
+        re.test(s.name) ||
+        re.test(s.file) ||
+        re.test(s.packageName),
+    );
+  } catch {
+    const lower = pattern.toLowerCase();
+    return graph.symbols.filter(
+      (s) =>
+        s.name.toLowerCase().includes(lower) ||
+        s.file.toLowerCase().includes(lower) ||
+        s.packageName.toLowerCase().includes(lower),
+    );
+  }
 }
 
 export function findImports(

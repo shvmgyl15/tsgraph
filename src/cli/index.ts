@@ -4,6 +4,7 @@ import path from "node:path";
 import fs from "node:fs";
 import { Command } from "commander";
 import { scanFiles } from "../scanner/index.js";
+import type { ScannedFile } from "../scanner/index.js";
 import { parseProject } from "../parser/index.js";
 import { serialize } from "../graph/types.js";
 import { generateReport } from "../report/index.js";
@@ -59,12 +60,55 @@ program
   .description("Local AST-based TypeScript/React/Next.js codebase indexer")
   .version("0.1.0");
 
+function buildManifest(rootDir: string, files: ScannedFile[]): void {
+  const manifest: Record<string, { mtime: number; size: number }> = {};
+  for (const sf of files) {
+    try {
+      const stat = fs.statSync(sf.path);
+      manifest[sf.relativePath] = { mtime: stat.mtimeMs, size: stat.size };
+    } catch {
+      // skip files that can't be stat'd
+    }
+  }
+  const manifestPath = path.join(rootDir, ".tsgraph", "manifest.json");
+  fs.writeFileSync(manifestPath, JSON.stringify({ version: 1, files: manifest }, null, 2), "utf-8");
+}
+
+function isBuildStale(rootDir: string, files: ScannedFile[]): boolean {
+  const manifestPath = path.join(rootDir, ".tsgraph", "manifest.json");
+  let manifest: { version?: number; files?: Record<string, { mtime: number; size: number }> };
+  try {
+    manifest = JSON.parse(fs.readFileSync(manifestPath, "utf-8"));
+  } catch {
+    return true;
+  }
+  if (!manifest.files) return true;
+  const scanned = new Set<string>();
+  for (const sf of files) {
+    scanned.add(sf.relativePath);
+    const old = manifest.files[sf.relativePath];
+    if (!old) return true;
+    let stat: { mtimeMs: number; size: number };
+    try {
+      stat = fs.statSync(sf.path);
+    } catch {
+      return true;
+    }
+    if (old.mtime !== stat.mtimeMs || old.size !== stat.size) return true;
+  }
+  for (const key of Object.keys(manifest.files)) {
+    if (!scanned.has(key)) return true;
+  }
+  return false;
+}
+
 program
   .command("build")
   .description("Generate .tsgraph/graph.json and GRAPH_REPORT.md")
   .argument("<root>", "root directory of the project")
   .option("--precise", "use type-checked enrichment (slower)")
-  .action((root: string) => {
+  .option("--force", "force full rebuild even if no changes detected")
+  .action((root: string, opts: { precise?: boolean; force?: boolean }) => {
     const rootDir = path.resolve(root);
 
     const { files, errors } = scanFiles(rootDir);
@@ -72,13 +116,20 @@ program
       console.error("scan warning:", err.message);
     }
 
-    const graph = parseProject(rootDir, files);
-
     const outDir = path.join(rootDir, ".tsgraph");
     fs.mkdirSync(outDir, { recursive: true });
 
+    if (!opts.force && !isBuildStale(rootDir, files)) {
+      console.log("tsgraph: no changes detected (use --force to rebuild)");
+      return;
+    }
+
+    const graph = parseProject(rootDir, files);
+
     const graphPath = path.join(outDir, "graph.json");
     fs.writeFileSync(graphPath, serialize(graph), "utf-8");
+
+    buildManifest(rootDir, files);
 
     const reportPath = path.join(outDir, "GRAPH_REPORT.md");
     fs.writeFileSync(
@@ -234,6 +285,20 @@ program
       const results = findImports(graph, importPath);
       if (results.length === 0) {
         console.log(`No imports matching "${importPath}"`);
+        const pkgPath = path.resolve(process.cwd(), "package.json");
+        try {
+          if (fs.existsSync(pkgPath)) {
+            const pkg = JSON.parse(fs.readFileSync(pkgPath, "utf-8"));
+            const deps = { ...pkg.dependencies, ...pkg.devDependencies };
+            const lower = importPath.toLowerCase();
+            const depMatches = Object.keys(deps).filter((k) => k.toLowerCase().includes(lower));
+            if (depMatches.length > 0) {
+              console.log(`Hint: "${depMatches[0]}" is in package.json dependencies but has no direct imports in source code.`);
+            }
+          }
+        } catch {
+          // ignore package.json read/parse errors
+        }
         return;
       }
       console.log(`Imports matching "${importPath}" (${results.length}):`);
@@ -515,6 +580,127 @@ function printImpactTree(results: ImpactNode[], symbolName: string) {
   }
 
 program
+  .command("impact <symbol>")
+  .description("Show downstream blast radius (callers recursively)")
+  .option("--depth <number>", "Max traversal depth", "5")
+  .option("-j, --json", "Output as JSON")
+  .action((symbol: string, opts: { depth?: string; json?: boolean }) => {
+    try {
+      const graph = loadGraphFromCwd();
+      const maxDepth = parseInt(opts.depth ?? "5", 10);
+      const results = impact(graph, symbol, maxDepth);
+
+      if (opts.json) {
+        console.log(JSON.stringify(results, null, 2));
+        return;
+      }
+
+      if (results.length === 0) {
+        console.log(`No callers found for "${symbol}".`);
+        return;
+      }
+
+      printImpactTree(results, symbol);
+    } catch (err) {
+      handleError(err);
+    }
+  });
+
+program
+  .command("path <from> <to>")
+  .description("Find shortest call path between two symbols")
+  .option("--depth <number>", "Max traversal depth", "10")
+  .option("-j, --json", "Output as JSON")
+  .action((from: string, to: string, opts: { depth?: string; json?: boolean }) => {
+    try {
+      const graph = loadGraphFromCwd();
+      const maxDepth = parseInt(opts.depth ?? "10", 10);
+      const results = findPath(graph, from, to, maxDepth);
+
+      if (opts.json) {
+        console.log(JSON.stringify(results, null, 2));
+        return;
+      }
+
+      if (!results) {
+        console.log(`No path found from "${from}" to "${to}".`);
+        return;
+      }
+
+      console.log(`Shortest path from "${from}" to "${to}":`);
+      for (let i = 0; i < results.length; i++) {
+        const n = results[i];
+        const arrow = i < results.length - 1 ? " →" : "";
+        console.log(`  ${n.kind} ${n.name} (${n.file}:${n.line})${arrow}`);
+      }
+    } catch (err) {
+      handleError(err);
+    }
+  });
+
+program
+  .command("orphans")
+  .description("Find dead code — symbols with no callers or tests")
+  .option("-j, --json", "Output as JSON")
+  .action((opts: { json?: boolean }) => {
+    try {
+      const graph = loadGraphFromCwd();
+      const results = findOrphans(graph);
+
+      if (opts.json) {
+        console.log(JSON.stringify(results, null, 2));
+        return;
+      }
+
+      if (results.length === 0) {
+        console.log("No orphans found.");
+        return;
+      }
+
+      console.log(`Orphans (${results.length}):`);
+      for (const r of results) {
+        console.log(`  ${r.symbol.kind} ${r.symbol.name} — ${r.reason} (${r.symbol.file}:${r.symbol.line})`);
+      }
+    } catch (err) {
+      handleError(err);
+    }
+  });
+
+program
+  .command("trace <string>")
+  .description("Find a string literal across symbols and trace callers upstream")
+  .option("--depth <number>", "Max caller traversal depth", "5")
+  .option("-j, --json", "Output as JSON")
+  .action((searchString: string, opts: { depth?: string; json?: boolean }) => {
+    try {
+      const graph = loadGraphFromCwd();
+      const maxDepth = parseInt(opts.depth ?? "5", 10);
+      const results = trace(graph, searchString, maxDepth);
+
+      if (opts.json) {
+        console.log(JSON.stringify(results, null, 2));
+        return;
+      }
+
+      if (results.length === 0) {
+        console.log(`No matches found for "${searchString}".`);
+        return;
+      }
+
+      console.log(`Trace results for "${searchString}" (${results.length} match(es)):`);
+      for (const r of results) {
+        console.log(`  ${r.match.symbol.name} at ${r.match.file}:${r.match.line}`);
+        console.log(`    context: ${r.match.contextLine}`);
+        if (r.callers.length > 0) {
+          console.log(`    callers: ${r.callers.map((c) => c.symbol.name).join(", ")}`);
+        }
+      }
+    } catch (err) {
+      handleError(err);
+    }
+  });
+
+program
   .command("boundaries")
   .description("Check architecture boundaries defined in .tsgraph/boundaries.json")
   .option("-j, --json", "Output as JSON")
@@ -725,9 +911,11 @@ program
 program
   .command("mcp")
   .description("Start the MCP stdio server for AI agent integration")
-  .action(async () => {
+  .option("--root <path>", "Project root directory (defaults to cwd)")
+  .action(async (opts: { root?: string }) => {
     try {
-      await startMcpServer(process.cwd());
+      const rootDir = opts.root ? path.resolve(opts.root) : process.cwd();
+      await startMcpServer(rootDir);
     } catch (err) {
       handleError(err);
     }
