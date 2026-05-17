@@ -126,3 +126,5 @@ npm test
 ## License
 
 MIT
+
+Inspiration: https://github.com/ozgurcd/gograph
