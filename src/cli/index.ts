@@ -26,6 +26,13 @@ import {
   dependencyTree,
 } from "../analysis/index.js";
 import type { DepsNode } from "../analysis/index.js";
+import {
+  impact,
+  findPath,
+  findOrphans,
+  trace,
+} from "../traversal/index.js";
+import type { ImpactNode } from "../traversal/index.js";
 
 const program = new Command();
 
@@ -468,6 +475,145 @@ program
       console.log(`Dependency tree for "${symbol}" (depth ${maxDepth}):`);
       console.log("");
       printDepsTree(tree);
+    } catch (err) {
+      handleError(err);
+    }
+  });
+
+function printImpactTree(results: ImpactNode[], symbolName: string) {
+  const byDepth = new Map<number, ImpactNode[]>();
+  for (const r of results) {
+    const list = byDepth.get(r.depth) ?? [];
+    list.push(r);
+    byDepth.set(r.depth, list);
+  }
+
+  console.log(`Impact of "${symbolName}":`);
+  for (const [depth, nodes] of [...byDepth.entries()].sort((a, b) => a[0] - b[0])) {
+    for (const n of nodes) {
+      const prefix = "  ".repeat(depth);
+      console.log(`${prefix}${n.symbol.name} (depth ${depth}, ${n.symbol.file}:${n.symbol.line})`);
+    }
+  }
+}
+
+program
+  .command("impact <symbol>")
+  .description("Show downstream blast radius (callers, recursively)")
+  .option("-d, --depth <number>", "Max traversal depth", "5")
+  .option("-j, --json", "Output as JSON")
+  .action((symbol: string, opts: { depth?: string; json?: boolean }) => {
+    try {
+      const graph = loadGraphFromCwd();
+      const maxDepth = parseInt(opts.depth ?? "5", 10);
+      const results = impact(graph, symbol, maxDepth);
+
+      if (opts.json) {
+        console.log(JSON.stringify(results, null, 2));
+        return;
+      }
+
+      if (results.length === 0) {
+        console.log(`No impact found for "${symbol}".`);
+        return;
+      }
+
+      printImpactTree(results, symbol);
+    } catch (err) {
+      handleError(err);
+    }
+  });
+
+program
+  .command("path <from> <to>")
+  .description("Find shortest call path between two symbols")
+  .option("-d, --depth <number>", "Max search depth", "10")
+  .option("-j, --json", "Output as JSON")
+  .action((from: string, to: string, opts: { depth?: string; json?: boolean }) => {
+    try {
+      const graph = loadGraphFromCwd();
+      const maxDepth = parseInt(opts.depth ?? "10", 10);
+      const p = findPath(graph, from, to, maxDepth);
+
+      if (opts.json) {
+        console.log(JSON.stringify(p, null, 2));
+        return;
+      }
+
+      if (!p) {
+        console.log(`No path found from "${from}" to "${to}".`);
+        return;
+      }
+
+      console.log(`Path from "${from}" to "${to}":`);
+      console.log(`  ${p.map((n) => n.name).join(" → ")}`);
+    } catch (err) {
+      handleError(err);
+    }
+  });
+
+program
+  .command("orphans")
+  .description("Find dead code — symbols with no callers or tests")
+  .option("-j, --json", "Output as JSON")
+  .action((opts: { json?: boolean }) => {
+    try {
+      const graph = loadGraphFromCwd();
+      const results = findOrphans(graph);
+
+      if (opts.json) {
+        console.log(JSON.stringify(results, null, 2));
+        return;
+      }
+
+      if (results.length === 0) {
+        console.log("No orphans found.");
+        return;
+      }
+
+      console.log(`Orphans (${results.length}):`);
+      for (const r of results) {
+        console.log(`  ${r.symbol.name.padEnd(20)} ${r.symbol.file}:${r.symbol.line}  (${r.reason})`);
+      }
+    } catch (err) {
+      handleError(err);
+    }
+  });
+
+program
+  .command("trace <string>")
+  .description("Find a string literal across symbols and trace callers upstream")
+  .option("-d, --depth <number>", "Max caller depth", "5")
+  .option("-j, --json", "Output as JSON")
+  .action((searchString: string, opts: { depth?: string; json?: boolean }) => {
+    try {
+      const graph = loadGraphFromCwd();
+      const maxDepth = parseInt(opts.depth ?? "5", 10);
+      const results = trace(graph, searchString, maxDepth);
+
+      if (opts.json) {
+        console.log(JSON.stringify(results, null, 2));
+        return;
+      }
+
+      if (results.length === 0) {
+        console.log(`No matches found for "${searchString}".`);
+        return;
+      }
+
+      console.log(`Trace of "${searchString}" (${results.length} occurrences):`);
+      for (let i = 0; i < results.length; i++) {
+        const t = results[i];
+        console.log(`  [${i + 1}] ${t.match.file}:${t.match.line} — ${t.match.symbol.name}`);
+        console.log(`       ${t.match.contextLine}`);
+        if (t.callers.length > 0) {
+          for (const c of t.callers) {
+            const prefix = "  ".repeat(1 + c.depth);
+            console.log(`${prefix}↑ ${c.symbol.name} (${c.symbol.file}:${c.symbol.line})`);
+          }
+        }
+        if (i < results.length - 1) console.log("");
+      }
     } catch (err) {
       handleError(err);
     }
