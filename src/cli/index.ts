@@ -33,6 +33,7 @@ import {
   trace,
 } from "../traversal/index.js";
 import type { ImpactNode } from "../traversal/index.js";
+import { startMcpServer } from "../mcp/server.js";
 
 const program = new Command();
 
@@ -614,6 +615,17 @@ program
         }
         if (i < results.length - 1) console.log("");
       }
+    } catch (err) {
+      handleError(err);
+    }
+  });
+
+program
+  .command("mcp")
+  .description("Start the MCP stdio server for AI agent integration")
+  .action(async () => {
+    try {
+      await startMcpServer(process.cwd());
     } catch (err) {
       handleError(err);
     }

@@ -49,9 +49,9 @@
 - [x] Write traversal tests
 
 ## Phase 8: MCP Server
-- [ ] MCP stdio server wrapping all query tools
-- [ ] Tool definition for each search/query command
-- [ ] MCP integration test
+- [x] MCP stdio server wrapping all query tools
+- [x] Tool definition for each search/query command
+- [x] MCP integration test
 
 ## Phase 9: Advanced Features
 - [ ] boundaries (architecture enforcement via .tsgraph/boundaries.json)
