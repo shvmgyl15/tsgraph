@@ -127,6 +127,6 @@ npm test
 
 MIT
 
-##Inspiration: 
+## Inspiration: 
 
 https://github.com/ozgurcd/gograph
