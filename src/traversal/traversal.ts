@@ -151,7 +151,7 @@ export function trace(
   const results: TraceResult[] = [];
 
   for (const sym of graph.symbols) {
-    if (sym.kind !== "function" && sym.kind !== "method") continue;
+    if (sym.kind !== "function" && sym.kind !== "method" && sym.kind !== "const") continue;
 
     const filePath = path.join(graph.root, sym.file);
     let content: string;

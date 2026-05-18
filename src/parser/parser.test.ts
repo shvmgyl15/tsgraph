@@ -188,6 +188,80 @@ export function process() {
     fs.rmSync(dir, { recursive: true });
   });
 
+  it("extracts call expressions within const arrow functions", () => {
+    const dir = createTempDir();
+    writeFile(dir, "component.tsx", `
+const MyComponent = () => {
+  const router = useRouter();
+  const [state, setState] = useState(false);
+  return <div />;
+};
+
+const useCustomHook = () => {
+  const data = fetchData();
+  return data;
+};
+`);
+
+    const { files } = scanFiles(dir);
+    const graph = parseProject(dir, files);
+
+    const myCompCalls = graph.calls.filter((c) => c.callerName === "MyComponent");
+    expect(myCompCalls.length).toBeGreaterThanOrEqual(2);
+    expect(myCompCalls.some((c) => c.calleeRaw === "useRouter")).toBe(true);
+    expect(myCompCalls.some((c) => c.calleeRaw === "useState")).toBe(true);
+
+    const hookCalls = graph.calls.filter((c) => c.callerName === "useCustomHook");
+    expect(hookCalls.some((c) => c.calleeRaw === "fetchData")).toBe(true);
+
+    fs.rmSync(dir, { recursive: true });
+  });
+
+  it("extracts new expression calls within function bodies", () => {
+    const dir = createTempDir();
+    writeFile(dir, "service.ts", `
+function createService() {
+  return new CommonServiceMethod(console);
+}
+
+export function start() {
+  const svc = new Service("config");
+  svc.run();
+}
+`);
+
+    const { files } = scanFiles(dir);
+    const graph = parseProject(dir, files);
+
+    const createCalls = graph.calls.filter((c) => c.callerName === "createService");
+    expect(createCalls.some((c) => c.calleeRaw === "CommonServiceMethod")).toBe(true);
+
+    const startCalls = graph.calls.filter((c) => c.callerName === "start");
+    expect(startCalls.some((c) => c.calleeRaw === "Service")).toBe(true);
+    expect(startCalls.some((c) => c.calleeRaw === "svc.run")).toBe(true);
+
+    fs.rmSync(dir, { recursive: true });
+  });
+
+  it("extracts new expression calls within const arrow functions", () => {
+    const dir = createTempDir();
+    writeFile(dir, "hooks.ts", `
+const useService = () => {
+  const svc = new AnalyticsService();
+  return svc.track();
+};
+`);
+
+    const { files } = scanFiles(dir);
+    const graph = parseProject(dir, files);
+
+    const hookCalls = graph.calls.filter((c) => c.callerName === "useService");
+    expect(hookCalls.some((c) => c.calleeRaw === "AnalyticsService")).toBe(true);
+    expect(hookCalls.some((c) => c.calleeRaw === "svc.track")).toBe(true);
+
+    fs.rmSync(dir, { recursive: true });
+  });
+
   it("extracts imports", () => {
     const dir = createTempDir();
     writeFile(dir, "main.ts", `

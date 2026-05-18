@@ -63,3 +63,10 @@
 - [x] add-opencode-plugin (auto-configure opencode MCP + agent)
 - [x] Enhanced GRAPH_REPORT.md (hotspots, boundaries, coupling, stale)
 - [x] Incremental builds (file mtime tracking, skip rebuild when unchanged)
+
+## Phase 10: Call Extraction Fixes
+- [x] P0: Const arrow function call extraction in extractCalls()
+- [x] P1: `new` expression support in call extraction
+- [x] P2: Low call count resolved (consequence of P0+P1)
+- [x] trace() includes const kind symbols
+- [x] Tests added for const arrow calls, new expressions, and combined

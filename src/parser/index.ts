@@ -179,7 +179,7 @@ function extractCalls(
     if (!name) continue;
     const funcId = symbolId(filePath, name);
     func.forEachDescendant((node) => {
-      if (Node.isCallExpression(node)) {
+      if (Node.isCallExpression(node) || Node.isNewExpression(node)) {
         const calleeRaw = node.getExpression().getText();
         calls.push({
           callerSymbolId: funcId,
@@ -201,11 +201,35 @@ function extractCalls(
       if (!mName) continue;
       const methodId = symbolId(filePath, `${clsName}.${mName}`);
       method.forEachDescendant((node) => {
-        if (Node.isCallExpression(node)) {
+        if (Node.isCallExpression(node) || Node.isNewExpression(node)) {
           const calleeRaw = node.getExpression().getText();
           calls.push({
             callerSymbolId: methodId,
             callerName: mName,
+            calleeRaw,
+            file: filePath,
+            line: node.getStartLineNumber(),
+          });
+        }
+        return false;
+      });
+    }
+  }
+
+  for (const vs of sourceFile.getVariableStatements()) {
+    for (const decl of vs.getDeclarations()) {
+      const name = decl.getName();
+      if (!name) continue;
+      const initializer = decl.getInitializer();
+      if (!initializer) continue;
+      if (!Node.isArrowFunction(initializer) && !Node.isFunctionExpression(initializer)) continue;
+      const declId = symbolId(filePath, name);
+      initializer.forEachDescendant((node) => {
+        if (Node.isCallExpression(node) || Node.isNewExpression(node)) {
+          const calleeRaw = node.getExpression().getText();
+          calls.push({
+            callerSymbolId: declId,
+            callerName: name,
             calleeRaw,
             file: filePath,
             line: node.getStartLineNumber(),
