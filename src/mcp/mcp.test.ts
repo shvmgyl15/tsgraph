@@ -129,7 +129,14 @@ describe("MCP server", () => {
     expect(toolNames).toContain("complexity");
     expect(toolNames).toContain("hotspot");
     expect(toolNames).toContain("coupling");
-    expect(toolNames).toHaveLength(14);
+    expect(toolNames).toContain("source");
+    expect(toolNames).toContain("focus");
+    expect(toolNames).toContain("deps");
+    expect(toolNames).toContain("boundaries");
+    expect(toolNames).toContain("changes");
+    expect(toolNames).toContain("plan");
+    expect(toolNames).toContain("review");
+    expect(toolNames).toHaveLength(21);
 
     server.kill();
     fs.rmSync(dir, { recursive: true });
@@ -169,6 +176,80 @@ describe("MCP server", () => {
     expect(textContent).toBeTruthy();
     const parsed = JSON.parse(textContent!);
     expect(Array.isArray(parsed)).toBe(true);
+
+    server.kill();
+    fs.rmSync(dir, { recursive: true });
+  }, 30000);
+
+  it("calls source tool and returns source code for a symbol", async () => {
+    const dir = createTempDir();
+    writeFile(dir, "package.json", JSON.stringify({ name: "test" }));
+    writeFile(dir, "index.ts", "export function foo() { return 1; }");
+    fs.mkdirSync(path.join(dir, ".tsgraph"), { recursive: true });
+
+    const { scanFiles } = await import("../scanner/index.js");
+    const { parseProject } = await import("../parser/index.js");
+    const { serialize } = await import("../graph/types.js");
+    const scanned = scanFiles(dir);
+    const graph = parseProject(dir, scanned.files);
+    fs.writeFileSync(path.join(dir, ".tsgraph", "graph.json"), serialize(graph), "utf-8");
+
+    server = spawn("npx", ["tsx", cliEntry, "mcp"], {
+      cwd: dir,
+      stdio: ["pipe", "pipe", "pipe"],
+    });
+
+    await new Promise((r) => setTimeout(r, 500));
+
+    await mcpHandshake(server);
+
+    const resp = await sendRequest(server, "tools/call", {
+      name: "source",
+      arguments: { symbol: "foo" },
+    }) as Record<string, unknown>;
+
+    expect(resp).toBeTruthy();
+    const result = (resp as { result?: { content?: { text?: string }[] } }).result;
+    expect(result).toBeTruthy();
+    const textContent = result?.content?.[0]?.text;
+    expect(textContent).toContain("function foo");
+
+    server.kill();
+    fs.rmSync(dir, { recursive: true });
+  }, 30000);
+
+  it("calls source tool with unknown symbol and returns not found", async () => {
+    const dir = createTempDir();
+    writeFile(dir, "package.json", JSON.stringify({ name: "test" }));
+    writeFile(dir, "index.ts", "export function foo() { return 1; }");
+    fs.mkdirSync(path.join(dir, ".tsgraph"), { recursive: true });
+
+    const { scanFiles } = await import("../scanner/index.js");
+    const { parseProject } = await import("../parser/index.js");
+    const { serialize } = await import("../graph/types.js");
+    const scanned = scanFiles(dir);
+    const graph = parseProject(dir, scanned.files);
+    fs.writeFileSync(path.join(dir, ".tsgraph", "graph.json"), serialize(graph), "utf-8");
+
+    server = spawn("npx", ["tsx", cliEntry, "mcp"], {
+      cwd: dir,
+      stdio: ["pipe", "pipe", "pipe"],
+    });
+
+    await new Promise((r) => setTimeout(r, 500));
+
+    await mcpHandshake(server);
+
+    const resp = await sendRequest(server, "tools/call", {
+      name: "source",
+      arguments: { symbol: "nonexistent" },
+    }) as Record<string, unknown>;
+
+    expect(resp).toBeTruthy();
+    const result = (resp as { result?: { content?: { text?: string }[] } }).result;
+    expect(result).toBeTruthy();
+    const textContent = result?.content?.[0]?.text;
+    expect(textContent).toContain("not found");
 
     server.kill();
     fs.rmSync(dir, { recursive: true });

@@ -5,9 +5,12 @@ import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js"
 import { z } from "zod/v4";
 import type { Graph } from "../graph/types.js";
 import { deserialize } from "../graph/types.js";
-import { findCallers, findCallees, findNode, querySymbols, findImports, findPublic, context } from "../search/index.js";
+import { findCallers, findCallees, findNode, querySymbols, findImports, findPublic, context, readSource, focusPackage } from "../search/index.js";
 import { impact, findPath, findOrphans, trace } from "../traversal/index.js";
-import { analyzeComplexity, findHotspots, analyzeCoupling } from "../analysis/index.js";
+import { analyzeComplexity, findHotspots, analyzeCoupling, dependencyTree } from "../analysis/index.js";
+import { loadBoundariesConfig, checkBoundaries } from "../boundaries/index.js";
+import { getChanges } from "../changes/index.js";
+import { generatePlan, generateReview } from "../plan/index.js";
 
 function loadGraph(rootDir: string): Graph {
   const graphPath = path.join(rootDir, ".tsgraph", "graph.json");
@@ -56,7 +59,9 @@ export async function startMcpServer(rootDir: string): Promise<void> {
     inputSchema: z.object({ symbol: z.string() }),
   }, async ({ symbol }) => {
     try {
-      return text(JSON.stringify(withGraph(rootDir, (g) => findCallers(g, symbol)), null, 2));
+      const result = withGraph(rootDir, (g) => findCallers(g, symbol));
+      if (result.length === 0) return text(`No callers found for '${symbol}'`);
+      return text(JSON.stringify(result, null, 2));
     } catch (err) {
       return error((err as Error).message);
     }
@@ -67,7 +72,9 @@ export async function startMcpServer(rootDir: string): Promise<void> {
     inputSchema: z.object({ symbol: z.string() }),
   }, async ({ symbol }) => {
     try {
-      return text(JSON.stringify(withGraph(rootDir, (g) => findCallees(g, symbol)), null, 2));
+      const result = withGraph(rootDir, (g) => findCallees(g, symbol));
+      if (result.length === 0) return text(`No callees found for '${symbol}'`);
+      return text(JSON.stringify(result, null, 2));
     } catch (err) {
       return error((err as Error).message);
     }
@@ -78,7 +85,9 @@ export async function startMcpServer(rootDir: string): Promise<void> {
     inputSchema: z.object({ symbol: z.string() }),
   }, async ({ symbol }) => {
     try {
-      return text(JSON.stringify(withGraph(rootDir, (g) => findNode(g, symbol)), null, 2));
+      const result = withGraph(rootDir, (g) => findNode(g, symbol));
+      if (!result) return text(`Symbol '${symbol}' not found`);
+      return text(JSON.stringify(result, null, 2));
     } catch (err) {
       return error((err as Error).message);
     }
@@ -100,7 +109,9 @@ export async function startMcpServer(rootDir: string): Promise<void> {
     inputSchema: z.object({ symbol: z.string() }),
   }, async ({ symbol }) => {
     try {
-      return text(JSON.stringify(withGraph(rootDir, (g) => context(g, symbol)), null, 2));
+      const result = withGraph(rootDir, (g) => context(g, symbol));
+      if (!result.node) return text(`Symbol '${symbol}' not found`);
+      return text(JSON.stringify(result, null, 2));
     } catch (err) {
       return error((err as Error).message);
     }
@@ -133,7 +144,9 @@ export async function startMcpServer(rootDir: string): Promise<void> {
     inputSchema: z.object({ symbol: z.string(), depth: z.number().optional() }),
   }, async ({ symbol, depth }) => {
     try {
-      return text(JSON.stringify(withGraph(rootDir, (g) => impact(g, symbol, depth)), null, 2));
+      const result = withGraph(rootDir, (g) => impact(g, symbol, depth));
+      if (result.length === 0) return text(`No impact found for '${symbol}'`);
+      return text(JSON.stringify(result, null, 2));
     } catch (err) {
       return error((err as Error).message);
     }
@@ -144,7 +157,9 @@ export async function startMcpServer(rootDir: string): Promise<void> {
     inputSchema: z.object({ from: z.string(), to: z.string(), depth: z.number().optional() }),
   }, async ({ from, to, depth }) => {
     try {
-      return text(JSON.stringify(withGraph(rootDir, (g) => findPath(g, from, to, depth)), null, 2));
+      const result = withGraph(rootDir, (g) => findPath(g, from, to, depth));
+      if (!result) return text(`No path found between '${from}' and '${to}'`);
+      return text(JSON.stringify(result, null, 2));
     } catch (err) {
       return error((err as Error).message);
     }
@@ -207,6 +222,102 @@ export async function startMcpServer(rootDir: string): Promise<void> {
       let results = analyzeCoupling(graph);
       if (pkg) results = results.filter((r) => r.packageName === pkg);
       return text(JSON.stringify(results, null, 2));
+    } catch (err) {
+      return error((err as Error).message);
+    }
+  });
+
+  server.registerTool("source", {
+    description: "Extract the source code for a specific symbol by name",
+    inputSchema: z.object({ symbol: z.string() }),
+  }, async ({ symbol }) => {
+    try {
+      const result = withGraph(rootDir, (g) => {
+        const node = findNode(g, symbol);
+        if (!node) return null;
+        return readSource(g, node);
+      });
+      if (result === null) return text(`Symbol '${symbol}' not found`);
+      return text(result);
+    } catch (err) {
+      return error((err as Error).message);
+    }
+  });
+
+  server.registerTool("focus", {
+    description: "Show all files, symbols, and imports for a specific package",
+    inputSchema: z.object({ package: z.string() }),
+  }, async ({ package: pkg }) => {
+    try {
+      const result = withGraph(rootDir, (g) => focusPackage(g, pkg));
+      if (!result) return text(`Package '${pkg}' not found`);
+      return text(JSON.stringify(result, null, 2));
+    } catch (err) {
+      return error((err as Error).message);
+    }
+  });
+
+  server.registerTool("deps", {
+    description: "Show call dependency tree for a symbol",
+    inputSchema: z.object({ symbol: z.string(), depth: z.number().optional() }),
+  }, async ({ symbol, depth }) => {
+    try {
+      const result = withGraph(rootDir, (g) => dependencyTree(g, symbol, depth ?? 3));
+      if (!result) return text(`Symbol '${symbol}' not found`);
+      return text(JSON.stringify(result, null, 2));
+    } catch (err) {
+      return error((err as Error).message);
+    }
+  });
+
+  server.registerTool("boundaries", {
+    description: "Check architecture boundaries defined in .tsgraph/boundaries.json",
+    inputSchema: z.object({ config: z.string().optional() }),
+  }, async ({ config: configPath }) => {
+    try {
+      const config = loadBoundariesConfig(rootDir);
+      if (!config) return text(`No boundaries config found at .tsgraph/boundaries.json`);
+      const graph = loadGraph(rootDir);
+      const result = checkBoundaries(graph, config);
+      return text(JSON.stringify(result, null, 2));
+    } catch (err) {
+      return error((err as Error).message);
+    }
+  });
+
+  server.registerTool("changes", {
+    description: "Show files and symbols changed vs a base branch",
+    inputSchema: z.object({ base: z.string().optional() }),
+  }, async ({ base }) => {
+    try {
+      const graph = loadGraph(rootDir);
+      const result = getChanges(graph, rootDir, base ?? "main");
+      return text(JSON.stringify(result, null, 2));
+    } catch (err) {
+      return error((err as Error).message);
+    }
+  });
+
+  server.registerTool("plan", {
+    description: "Generate a change plan showing blast radius for given files/symbols",
+    inputSchema: z.object({ files: z.array(z.string()), symbols: z.array(z.string()).optional() }),
+  }, async ({ files, symbols }) => {
+    try {
+      const result = withGraph(rootDir, (g) => generatePlan(g, files, symbols ?? []));
+      return text(JSON.stringify(result, null, 2));
+    } catch (err) {
+      return error((err as Error).message);
+    }
+  });
+
+  server.registerTool("review", {
+    description: "Generate a code review summary vs a base branch",
+    inputSchema: z.object({ base: z.string().optional() }),
+  }, async ({ base }) => {
+    try {
+      const graph = loadGraph(rootDir);
+      const result = generateReview(graph, rootDir, base ?? "main");
+      return text(JSON.stringify(result, null, 2));
     } catch (err) {
       return error((err as Error).message);
     }
