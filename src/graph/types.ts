@@ -132,6 +132,16 @@ export interface ErrorEdge {
   line: number;
 }
 
+export interface HttpCallEdge {
+  sourceFile: string;
+  sourceLine: number;
+  functionName: string;
+  method: string;
+  url: string;
+  staticSegments: string[];
+  hasDynamic: boolean;
+}
+
 export interface AppRouterNode {
   path: string;
   dir: string;
@@ -165,6 +175,7 @@ export interface Graph {
   implements: ImplementsEdge[];
   mutations: MutationEdge[];
   errors: ErrorEdge[];
+  httpCalls: HttpCallEdge[];
   appRouter?: AppRouterNode;
 }
 
@@ -272,6 +283,19 @@ export function makeErrorEdge(overrides?: Partial<ErrorEdge>): ErrorEdge {
   return { message: "", functionName: "", file: "", line: 0, ...overrides };
 }
 
+export function makeHttpCallEdge(overrides?: Partial<HttpCallEdge>): HttpCallEdge {
+  return {
+    sourceFile: "",
+    sourceLine: 0,
+    functionName: "",
+    method: "",
+    url: "",
+    staticSegments: [],
+    hasDynamic: false,
+    ...overrides,
+  };
+}
+
 export function makeAppRouterNode(overrides?: Partial<AppRouterNode>): AppRouterNode {
   return {
     path: "",
@@ -300,6 +324,7 @@ export function makeGraph(overrides?: Partial<Graph>): Graph {
     implements: [],
     mutations: [],
     errors: [],
+    httpCalls: [],
     ...overrides,
   };
 }
@@ -308,6 +333,7 @@ const ARRAY_KEYS: (keyof Graph)[] = [
   "packages", "files", "symbols", "imports", "calls",
   "envReads", "dependencies", "routes", "concurrency",
   "testEdges", "implements", "mutations", "errors",
+  "httpCalls",
 ];
 
 function isGraph(value: unknown): value is Graph {

@@ -5,6 +5,7 @@ import {
   Node,
   SyntaxKind,
   type SourceFile,
+  type CallExpression,
 } from "ts-morph";
 import type {
   Graph,
@@ -14,6 +15,7 @@ import type {
   Dependency,
   FileNode,
   PackageNode,
+  HttpCallEdge,
 } from "../graph/types.js";
 import { GRAPH_VERSION } from "../graph/types.js";
 import type { ScannedFile } from "../scanner/index.js";
@@ -278,6 +280,165 @@ function extractImports(
   return imports;
 }
 
+const HTTP_METHODS = new Set(["get", "post", "put", "patch", "delete"]);
+
+function extractMethodFromOptions(node: Node): string | null {
+  if (!Node.isObjectLiteralExpression(node)) return null;
+  const methodProp = node.getProperty("method");
+  if (!methodProp) return null;
+  if (!Node.isPropertyAssignment(methodProp)) return null;
+  const initializer = methodProp.getInitializer();
+  if (!initializer || !Node.isStringLiteral(initializer)) return null;
+  return initializer.getLiteralValue().toUpperCase();
+}
+
+function parsePathSegments(url: string): string[] {
+  let path = url;
+  try {
+    path = new URL(url).pathname;
+  } catch {
+    const qIndex = path.indexOf("?");
+    if (qIndex !== -1) path = path.slice(0, qIndex);
+  }
+  return path.split("/").filter((s) => s.length > 0);
+}
+
+function extractUrlInfo(node: Node): {
+  url: string;
+  staticSegments: string[];
+  hasDynamic: boolean;
+} {
+  if (Node.isStringLiteral(node)) {
+    const url = node.getLiteralValue();
+    return { url, staticSegments: parsePathSegments(url), hasDynamic: false };
+  }
+  if (Node.isNoSubstitutionTemplateLiteral(node)) {
+    const raw = node.getText();
+    const url = raw.startsWith("`") ? raw.slice(1, -1) : raw;
+    return { url, staticSegments: parsePathSegments(url), hasDynamic: false };
+  }
+  if (Node.isTemplateExpression(node)) {
+    const parts: string[] = [];
+    const head = node.getHead();
+    let headText = head.getText();
+    if (headText.startsWith("`")) headText = headText.slice(1);
+    if (headText.endsWith("${")) headText = headText.slice(0, -2);
+    parts.push(headText);
+    for (const span of node.getTemplateSpans()) {
+      let litText = span.getLiteral().getText();
+      if (litText.startsWith("}")) litText = litText.slice(1);
+      if (litText.endsWith("${")) litText = litText.slice(0, -2);
+      if (litText.endsWith("`")) litText = litText.slice(0, -1);
+      parts.push(litText);
+    }
+    const combinedStatic = parts.join("");
+    return {
+      url: node.getText(),
+      staticSegments: parsePathSegments(combinedStatic),
+      hasDynamic: true,
+    };
+  }
+  return {
+    url: node.getText(),
+    staticSegments: [],
+    hasDynamic: true,
+  };
+}
+
+function matchHttpCall(
+  exprText: string,
+  node: CallExpression,
+): { method: string } | null {
+  if (exprText === "fetch") {
+    const args = node.getArguments();
+    if (args.length >= 2) {
+      const method = extractMethodFromOptions(args[1]);
+      if (method) return { method };
+    }
+    return { method: "GET" };
+  }
+  const lastDot = exprText.lastIndexOf(".");
+  if (lastDot === -1) return null;
+  const methodName = exprText.slice(lastDot + 1);
+  if (HTTP_METHODS.has(methodName)) {
+    return { method: methodName.toUpperCase() };
+  }
+  return null;
+}
+
+function extractHttpCallsInScope(
+  node: Node,
+  filePath: string,
+  functionName: string,
+): HttpCallEdge[] {
+  const calls: HttpCallEdge[] = [];
+  node.forEachDescendant((child) => {
+    if (!Node.isCallExpression(child)) return false;
+    const expr = child.getExpression();
+    const exprText = expr.getText();
+    const matched = matchHttpCall(exprText, child);
+    if (!matched) return false;
+    const args = child.getArguments();
+    if (args.length === 0) return false;
+    const urlInfo = extractUrlInfo(args[0]);
+    calls.push({
+      sourceFile: filePath,
+      sourceLine: child.getStartLineNumber(),
+      functionName,
+      method: matched.method,
+      url: urlInfo.url,
+      staticSegments: urlInfo.staticSegments,
+      hasDynamic: urlInfo.hasDynamic,
+    });
+    return false;
+  });
+  return calls;
+}
+
+function extractHttpCalls(
+  sourceFile: SourceFile,
+  filePath: string,
+): HttpCallEdge[] {
+  const calls: HttpCallEdge[] = [];
+  for (const func of sourceFile.getFunctions()) {
+    const name = func.getName();
+    if (!name) continue;
+    calls.push(...extractHttpCallsInScope(func, filePath, name));
+  }
+  for (const cls of sourceFile.getClasses()) {
+    const clsName = cls.getName();
+    if (!clsName) continue;
+    for (const method of cls.getMethods()) {
+      const mName = method.getName();
+      if (!mName) continue;
+      calls.push(
+        ...extractHttpCallsInScope(
+          method,
+          filePath,
+          `${clsName}.${mName}`,
+        ),
+      );
+    }
+  }
+  for (const vs of sourceFile.getVariableStatements()) {
+    for (const decl of vs.getDeclarations()) {
+      const name = decl.getName();
+      if (!name) continue;
+      const initializer = decl.getInitializer();
+      if (!initializer) continue;
+      if (
+        !Node.isArrowFunction(initializer) &&
+        !Node.isFunctionExpression(initializer)
+      )
+        continue;
+      calls.push(
+        ...extractHttpCallsInScope(initializer, filePath, name),
+      );
+    }
+  }
+  return calls;
+}
+
 function readDependencies(rootDir: string): Dependency[] {
   const pkgPath = path.join(rootDir, "package.json");
   try {
@@ -343,21 +504,24 @@ export function parseProject(rootDir: string, scanned: ScannedFile[]): Graph {
   const allSymbols: SymbolNode[] = [];
   const allCalls: CallEdge[] = [];
   const allImports: ImportEdge[] = [];
+  const allHttpCalls: HttpCallEdge[] = [];
 
   for (const sourceFile of project.getSourceFiles()) {
     const relPath = path.relative(rootDir, sourceFile.getFilePath());
     const symbols = extractSymbols(sourceFile, relPath, pkgName);
     const calls = extractCalls(sourceFile, relPath);
     const imports = extractImports(sourceFile, relPath, pkgName);
+    const httpCalls = extractHttpCalls(sourceFile, relPath);
 
     allSymbols.push(...symbols);
     allCalls.push(...calls);
     allImports.push(...imports);
+    allHttpCalls.push(...httpCalls);
   }
 
   const dependencies = readDependencies(rootDir);
 
-  const baseGraph = { version: GRAPH_VERSION, generatedAt: new Date().toISOString(), root: rootDir, packages: [rootPackage], files: fileNodes, symbols: allSymbols, imports: allImports, calls: allCalls, envReads: [], dependencies, routes: [], concurrency: [], testEdges: [], implements: [], mutations: [], errors: [] };
+  const baseGraph = { version: GRAPH_VERSION, generatedAt: new Date().toISOString(), root: rootDir, packages: [rootPackage], files: fileNodes, symbols: allSymbols, imports: allImports, calls: allCalls, envReads: [], dependencies, routes: [], concurrency: [], testEdges: [], implements: [], mutations: [], errors: [], httpCalls: allHttpCalls };
 
   return extractNextJs(baseGraph, rootDir, scanned);
 }

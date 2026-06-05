@@ -15,6 +15,7 @@ import {
   makeImplementsEdge,
   makeMutationEdge,
   makeErrorEdge,
+  makeHttpCallEdge,
   makeAppRouterNode,
   makeStructField,
   serialize,
@@ -47,6 +48,7 @@ describe("factory functions", () => {
       expect(g.implements).toEqual([]);
       expect(g.mutations).toEqual([]);
       expect(g.errors).toEqual([]);
+      expect(g.httpCalls).toEqual([]);
       expect(g.appRouter).toBeUndefined();
     });
 
@@ -245,6 +247,38 @@ describe("factory functions", () => {
     });
   });
 
+  describe("makeHttpCallEdge", () => {
+    it("returns defaults", () => {
+      const e = makeHttpCallEdge();
+      expect(e.sourceFile).toBe("");
+      expect(e.sourceLine).toBe(0);
+      expect(e.functionName).toBe("");
+      expect(e.method).toBe("");
+      expect(e.url).toBe("");
+      expect(e.staticSegments).toEqual([]);
+      expect(e.hasDynamic).toBe(false);
+    });
+
+    it("merges overrides", () => {
+      const e = makeHttpCallEdge({
+        sourceFile: "api.ts",
+        sourceLine: 10,
+        functionName: "getUsers",
+        method: "GET",
+        url: "/api/users",
+        staticSegments: ["api", "users"],
+        hasDynamic: false,
+      });
+      expect(e.sourceFile).toBe("api.ts");
+      expect(e.sourceLine).toBe(10);
+      expect(e.functionName).toBe("getUsers");
+      expect(e.method).toBe("GET");
+      expect(e.url).toBe("/api/users");
+      expect(e.staticSegments).toEqual(["api", "users"]);
+      expect(e.hasDynamic).toBe(false);
+    });
+  });
+
   describe("makeAppRouterNode", () => {
     it("returns defaults", () => {
       const n = makeAppRouterNode();
@@ -312,6 +346,7 @@ describe("serialize / deserialize", () => {
         implements: [makeImplementsEdge({ interface: "Runner", concrete: "FastRunner" })],
         mutations: [makeMutationEdge({ field: "User.name", functionName: "rename", file: "user.ts", line: 8 })],
         errors: [makeErrorEdge({ message: "not found", functionName: "findUser", file: "user.ts", line: 12 })],
+        httpCalls: [makeHttpCallEdge({ sourceFile: "api.ts", sourceLine: 5, functionName: "load", method: "GET", url: "https://api.example.com/users", staticSegments: ["api", "example", "com", "users"], hasDynamic: false })],
         appRouter: makeAppRouterNode({
           path: "/",
           dir: "app",
@@ -338,6 +373,9 @@ describe("serialize / deserialize", () => {
       expect(restored.implements).toHaveLength(1);
       expect(restored.mutations).toHaveLength(1);
       expect(restored.errors).toHaveLength(1);
+      expect(restored.httpCalls).toHaveLength(1);
+      expect(restored.httpCalls[0].method).toBe("GET");
+      expect(restored.httpCalls[0].staticSegments).toContain("users");
       expect(restored.appRouter).toBeTruthy();
       expect(restored.appRouter!.children).toHaveLength(1);
     });

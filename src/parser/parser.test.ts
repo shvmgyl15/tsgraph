@@ -338,6 +338,160 @@ import fs from "node:fs";
     fs.rmSync(dir, { recursive: true });
   });
 
+  describe("extractHttpCalls", () => {
+    it("detects fetch calls with GET", () => {
+      const dir = createTempDir();
+      writeFile(dir, "api.ts", `
+export function loadUsers() {
+  return fetch("/api/users");
+}
+`);
+      const { files } = scanFiles(dir);
+      const graph = parseProject(dir, files);
+      const httpCalls = graph.httpCalls.filter((c) => c.functionName === "loadUsers");
+      expect(httpCalls).toHaveLength(1);
+      expect(httpCalls[0].method).toBe("GET");
+      expect(httpCalls[0].url).toBe("/api/users");
+      expect(httpCalls[0].staticSegments).toEqual(["api", "users"]);
+      expect(httpCalls[0].hasDynamic).toBe(false);
+      fs.rmSync(dir, { recursive: true });
+    });
+
+    it("detects fetch calls with POST method option", () => {
+      const dir = createTempDir();
+      writeFile(dir, "api.ts", `
+export function createUser() {
+  return fetch("/api/users", { method: "POST", body: JSON.stringify(data) });
+}
+`);
+      const { files } = scanFiles(dir);
+      const graph = parseProject(dir, files);
+      const httpCalls = graph.httpCalls.filter((c) => c.functionName === "createUser");
+      expect(httpCalls).toHaveLength(1);
+      expect(httpCalls[0].method).toBe("POST");
+      fs.rmSync(dir, { recursive: true });
+    });
+
+    it("detects axios.get calls", () => {
+      const dir = createTempDir();
+      writeFile(dir, "service.ts", `
+import axios from "axios";
+
+export function fetchData() {
+  return axios.get("https://api.example.com/data");
+}
+`);
+      const { files } = scanFiles(dir);
+      const graph = parseProject(dir, files);
+      const httpCalls = graph.httpCalls.filter((c) => c.functionName === "fetchData");
+      expect(httpCalls).toHaveLength(1);
+      expect(httpCalls[0].method).toBe("GET");
+      expect(httpCalls[0].staticSegments).toEqual(["data"]);
+      expect(httpCalls[0].hasDynamic).toBe(false);
+      fs.rmSync(dir, { recursive: true });
+    });
+
+    it("detects axios instance calls", () => {
+      const dir = createTempDir();
+      writeFile(dir, "service.ts", `
+const client = axios.create({ baseURL: "/api" });
+
+export function updateItem() {
+  return client.patch("/items/1");
+}
+`);
+      const { files } = scanFiles(dir);
+      const graph = parseProject(dir, files);
+      const httpCalls = graph.httpCalls.filter((c) => c.functionName === "updateItem");
+      expect(httpCalls).toHaveLength(1);
+      expect(httpCalls[0].method).toBe("PATCH");
+      expect(httpCalls[0].url).toBe("/items/1");
+      fs.rmSync(dir, { recursive: true });
+    });
+
+    it("detects calls inside arrow functions", () => {
+      const dir = createTempDir();
+      writeFile(dir, "hooks.ts", `
+export const useUsers = () => {
+  return axios.get("/api/users");
+};
+`);
+      const { files } = scanFiles(dir);
+      const graph = parseProject(dir, files);
+      const httpCalls = graph.httpCalls.filter((c) => c.functionName === "useUsers");
+      expect(httpCalls).toHaveLength(1);
+      expect(httpCalls[0].method).toBe("GET");
+      fs.rmSync(dir, { recursive: true });
+    });
+
+    it("detects calls inside class methods", () => {
+      const dir = createTempDir();
+      writeFile(dir, "service.ts", `
+class UserService {
+  list() {
+    return axios.get("/api/users");
+  }
+}
+`);
+      const { files } = scanFiles(dir);
+      const graph = parseProject(dir, files);
+      const httpCalls = graph.httpCalls.filter((c) => c.functionName === "UserService.list");
+      expect(httpCalls).toHaveLength(1);
+      expect(httpCalls[0].method).toBe("GET");
+      expect(httpCalls[0].url).toBe("/api/users");
+      fs.rmSync(dir, { recursive: true });
+    });
+
+    it("detects template literal URLs", () => {
+      const dir = createTempDir();
+      writeFile(dir, "api.ts", `
+export function getUser(id: string) {
+  return fetch(\`/api/users/\${id}\`);
+}
+`);
+      const { files } = scanFiles(dir);
+      const graph = parseProject(dir, files);
+      const httpCalls = graph.httpCalls.filter((c) => c.functionName === "getUser");
+      expect(httpCalls).toHaveLength(1);
+      expect(httpCalls[0].method).toBe("GET");
+      expect(httpCalls[0].hasDynamic).toBe(true);
+      expect(httpCalls[0].staticSegments).toEqual(["api", "users"]);
+      fs.rmSync(dir, { recursive: true });
+    });
+
+    it("handles multiple HTTP calls in one function", () => {
+      const dir = createTempDir();
+      writeFile(dir, "api.ts", `
+export function sync() {
+  const data = axios.get("/api/data");
+  axios.post("/api/data", data);
+}
+`);
+      const { files } = scanFiles(dir);
+      const graph = parseProject(dir, files);
+      const httpCalls = graph.httpCalls.filter((c) => c.functionName === "sync");
+      expect(httpCalls).toHaveLength(2);
+      expect(httpCalls.some((c) => c.method === "GET")).toBe(true);
+      expect(httpCalls.some((c) => c.method === "POST")).toBe(true);
+      fs.rmSync(dir, { recursive: true });
+    });
+
+    it("does not crash on non-HTTP call expressions", () => {
+      const dir = createTempDir();
+      writeFile(dir, "utils.ts", `
+export function helper() {
+  const x = Math.random();
+  console.log(x);
+  return x;
+}
+`);
+      const { files } = scanFiles(dir);
+      const graph = parseProject(dir, files);
+      expect(graph.httpCalls).toHaveLength(0);
+      fs.rmSync(dir, { recursive: true });
+    });
+  });
+
   it("handles empty project with no .ts files", () => {
     const dir = createTempDir();
     writeFile(dir, "README.md", "# Hello");

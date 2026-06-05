@@ -24,12 +24,22 @@ Key language-driven differences:
 - Testing: vitest
 - Linting: none (tsc strict mode is sufficient)
 
+### Boundaries
+- **tsgraph**: Owns all per-language extraction for TypeScript: symbols, calls, routes
+  (Next.js App Router / Pages Router), HTTP client calls (`fetch`, `axios`), env reads,
+  test edges, Next.js component detection, imports/dependencies.
+- **codegraph** orchestrates tsgraph, pygraph, and gograph. Do NOT add workspace-level
+  or cross-service logic here — that belongs in codegraph.
+- If a new TypeScript-specific extraction is needed, add it here, not in codegraph.
+
 ## Agent Rules
 
 ### Task Management
 - READ TODOS.md at session start to know what's done and what's next
 - UPDATE TODOS.md when you start/finish a task (`[.]` in-progress, `[x]` done)
 - Work in phase order unless a task has no blockers
+- After a phase completes (all items `[x]`), run `git init` if not yet done,
+  then commit and push: `git add -A && git commit -m "phase N: <title>" && git push origin main`
 
 ### Orchestration
 - This is a single-orchestrator project. When a task has multiple independent
