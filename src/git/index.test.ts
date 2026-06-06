@@ -25,7 +25,7 @@ function writeFile(relativePath: string, content: string) {
 
 beforeAll(() => {
   tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), "tsgraph-git-test-"));
-  run("git init");
+  run("git init -b main");
   run('git config user.email "test@test.com"');
   run('git config user.name "Test"');
   writeFile(".gitkeep", "");
