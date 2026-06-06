@@ -29,10 +29,15 @@ export function getCurrentBranch(root: string): string {
 }
 
 export function getDiffFiles(root: string, base: string = "main"): ChangedFile[] {
-  const output = execSync(`git diff --name-status ${base}...HEAD`, {
-    cwd: root,
-    encoding: "utf-8",
-  }).trim();
+  let output: string;
+  try {
+    output = execSync(`git diff --name-status ${base}...HEAD`, {
+      cwd: root,
+      encoding: "utf-8",
+    }).trim();
+  } catch {
+    return [];
+  }
   if (!output) return [];
   return output.split("\n").map((line) => {
     const parts = line.split(/\s+/);
