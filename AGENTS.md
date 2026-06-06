@@ -32,6 +32,20 @@ Key language-driven differences:
   or cross-service logic here — that belongs in codegraph.
 - If a new TypeScript-specific extraction is needed, add it here, not in codegraph.
 
+## Installation (for AI Agents)
+
+Install from npm:
+
+```bash
+npm install -g @shvmgyl15/tsgraph
+```
+
+After install, index a TypeScript/Next.js project:
+
+```bash
+tsgraph build /path/to/project
+```
+
 ## Agent Rules
 
 ### Task Management
