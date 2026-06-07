@@ -43,6 +43,8 @@ export interface SymbolNode {
   isExported: boolean;
   isClientComponent?: boolean;
   isServerComponent?: boolean;
+  eventProductions?: Record<string, any>[];
+  eventConsumptions?: Record<string, any>[];
 }
 
 export interface PackageNode {

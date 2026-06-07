@@ -18,8 +18,10 @@ import type {
   HttpCallEdge,
 } from "../graph/types.js";
 import { GRAPH_VERSION } from "../graph/types.js";
+import { loadEventConfig } from "../config.js";
 import type { ScannedFile } from "../scanner/index.js";
 import { extractNextJs } from "../nextjs/index.js";
+import { enrichSymbolsWithEvents } from "../extractors/events.js";
 
 function symbolId(file: string, name: string): string {
   return `${file}::${name}`;
@@ -521,7 +523,33 @@ export function parseProject(rootDir: string, scanned: ScannedFile[]): Graph {
 
   const dependencies = readDependencies(rootDir);
 
-  const baseGraph = { version: GRAPH_VERSION, generatedAt: new Date().toISOString(), root: rootDir, packages: [rootPackage], files: fileNodes, symbols: allSymbols, imports: allImports, calls: allCalls, envReads: [], dependencies, routes: [], concurrency: [], testEdges: [], implements: [], mutations: [], errors: [], httpCalls: allHttpCalls };
+  const baseGraph: Graph = {
+    version: GRAPH_VERSION,
+    generatedAt: new Date().toISOString(),
+    root: rootDir,
+    packages: [rootPackage],
+    files: fileNodes,
+    symbols: allSymbols,
+    imports: allImports,
+    calls: allCalls,
+    envReads: [],
+    dependencies,
+    routes: [],
+    concurrency: [],
+    testEdges: [],
+    implements: [],
+    mutations: [],
+    errors: [],
+    httpCalls: allHttpCalls,
+  };
 
-  return extractNextJs(baseGraph, rootDir, scanned);
+  let graph = extractNextJs(baseGraph, rootDir, scanned);
+
+  // Enrich symbols with event boundary data (SSE subscribers, hook patterns)
+  for (const sourceFile of project.getSourceFiles()) {
+    const relPath = path.relative(rootDir, sourceFile.getFilePath());
+    graph.symbols = enrichSymbolsWithEvents(graph.symbols, sourceFile, relPath);
+  }
+
+  return graph;
 }
