@@ -1,4 +1,5 @@
 import path from "node:path";
+import { Project, Node } from "ts-morph";
 import type { Graph, NavigationNode } from "../graph/types.js";
 import type { ScannedFile } from "../scanner/index.js";
 
@@ -205,4 +206,255 @@ export function extractExpoRouter(
   const tree = buildExpoRouterTree(scanned);
   if (!tree) return graph;
   return { ...graph, navigationTree: tree };
+}
+
+// React Navigation
+const NAVIGATOR_FACTORIES = new Set([
+  "createNativeStackNavigator",
+  "createBottomTabNavigator",
+  "createDrawerNavigator",
+  "createMaterialTopTabNavigator",
+]);
+
+interface NavigatorBinding {
+  tag: string;        // e.g. "Stack", "Tab"
+  factory: string;    // e.g. "createNativeStackNavigator"
+  file: string;
+}
+
+function detectNavigators(project: Project): NavigatorBinding[] {
+  const bindings: NavigatorBinding[] = [];
+
+  for (const sourceFile of project.getSourceFiles()) {
+    for (const vs of sourceFile.getVariableStatements()) {
+      for (const decl of vs.getDeclarations()) {
+        const initializer = decl.getInitializer();
+        if (!initializer) continue;
+
+        if (Node.isCallExpression(initializer)) {
+          const exprText = initializer.getExpression().getText();
+          if (NAVIGATOR_FACTORIES.has(exprText)) {
+            const name = decl.getName();
+            if (name) {
+              bindings.push({
+                tag: name,
+                factory: exprText,
+                file: path.relative(project.getRootDirectories()[0]?.getPath() ?? "", sourceFile.getFilePath()),
+              });
+            }
+          }
+        }
+      }
+    }
+  }
+
+  return bindings;
+}
+
+interface ScreenInfo {
+  routeName: string;
+  componentRef?: string;
+  componentFile?: string;
+  componentResolution?: "resolved" | "inline-unresolved";
+  options?: Record<string, unknown>;
+  file: string;
+  line: number;
+}
+
+function getJSXTagName(node: Node): string | undefined {
+  const children = node.getChildren();
+  // Tag name is typically the second child (after LessThanToken)
+  for (const child of children) {
+    const kn = child.getKindName();
+    if (kn === "Identifier" || kn === "PropertyAccessExpression") {
+      return child.getText();
+    }
+  }
+  return undefined;
+}
+
+function extractScreens(
+  tag: string,
+  project: Project,
+  graph: Graph,
+  rootDir: string,
+): ScreenInfo[] {
+  const screens: ScreenInfo[] = [];
+
+  for (const sourceFile of project.getSourceFiles()) {
+    sourceFile.forEachDescendant((node) => {
+      if (!Node.isJsxSelfClosingElement(node) && !Node.isJsxOpeningElement(node)) return false;
+
+      const tagNameFull = getJSXTagName(node);
+      if (!tagNameFull) return false;
+      if (tagNameFull !== `${tag}.Screen`) return false;
+
+      let routeName = "";
+      let componentRef: string | undefined;
+      let options: Record<string, unknown> | undefined;
+
+      for (const attr of node.getAttributes()) {
+        if (!Node.isJsxAttribute(attr)) continue;
+        const nameNode = attr.getNameNode();
+        const attrName = typeof nameNode === "string" ? nameNode : nameNode.getText();
+        const initializer = attr.getInitializer();
+
+        if (attrName === "name" && initializer && Node.isStringLiteral(initializer)) {
+          routeName = initializer.getLiteralValue();
+        }
+
+        if (attrName === "component" && initializer) {
+          // Unwrap JsxExpression { ... }
+          const resolvedInit = Node.isJsxExpression(initializer)
+            ? initializer.getExpression()
+            : initializer;
+          if (!resolvedInit) continue;
+
+          if (Node.isIdentifier(resolvedInit)) {
+            componentRef = resolvedInit.getText();
+          } else if (Node.isCallExpression(resolvedInit)) {
+            const expr = resolvedInit.getExpression();
+            if (Node.isIdentifier(expr) && expr.getText() === "require") {
+              const args = resolvedInit.getArguments();
+              if (args.length >= 1 && Node.isStringLiteral(args[0])) {
+                const reqPath = args[0].getLiteralValue();
+                const resolved = path.resolve(path.dirname(sourceFile.getFilePath()), reqPath);
+                const relPath = path.relative(rootDir, resolved);
+                const fileExt = path.extname(relPath);
+                const basePath = fileExt ? relPath.slice(0, -fileExt.length) : relPath;
+                componentRef = basePath;
+              }
+            }
+          } else if (Node.isPropertyAccessExpression(resolvedInit)) {
+            // require('./path').default
+            const innerExpr = resolvedInit.getExpression();
+            if (Node.isCallExpression(innerExpr)) {
+              const callExpr = innerExpr.getExpression();
+              if (Node.isIdentifier(callExpr) && callExpr.getText() === "require") {
+                const args = innerExpr.getArguments();
+                if (args.length >= 1 && Node.isStringLiteral(args[0])) {
+                  const reqPath = args[0].getLiteralValue();
+                  const resolved = path.resolve(path.dirname(sourceFile.getFilePath()), reqPath);
+                  const relPath = path.relative(rootDir, resolved);
+                  const fileExt = path.extname(relPath);
+                  const basePath = fileExt ? relPath.slice(0, -fileExt.length) : relPath;
+                  componentRef = basePath;
+                }
+              }
+            }
+          } else if (Node.isArrowFunction(resolvedInit)) {
+            // Shallow: grab first JSX element name from the body
+            const body = resolvedInit.getBody();
+            if (body) {
+              body.forEachDescendant((child) => {
+                if (Node.isJsxSelfClosingElement(child) || Node.isJsxOpeningElement(child)) {
+                  componentRef = getJSXTagName(child);
+                  return true;
+                }
+                return false;
+              });
+            }
+          }
+        }
+
+        if (attrName === "options" && initializer) {
+          try {
+            options = JSON.parse(initializer.getText());
+          } catch {
+            options = { raw: initializer.getText().slice(0, 200) };
+          }
+        }
+      }
+
+      if (routeName) {
+        const relPath = path.relative(rootDir, sourceFile.getFilePath());
+        let componentFile: string | undefined;
+
+        if (componentRef) {
+          if (componentRef.includes("/") || componentRef.includes("\\")) {
+            componentFile = componentRef;
+          } else {
+            const sym = graph.symbols.find((s) => s.name === componentRef);
+            if (sym) componentFile = sym.file;
+          }
+        }
+
+        screens.push({
+          routeName,
+          componentRef,
+          componentFile,
+          componentResolution: componentRef && !componentFile ? "inline-unresolved" : "resolved",
+          options,
+          file: relPath,
+          line: node.getStartLineNumber(),
+        });
+      }
+
+      return false;
+    });
+  }
+
+  return screens;
+}
+
+function buildReactNavigationTree(
+  project: Project,
+  graph: Graph,
+  scanned: ScannedFile[],
+  rootDir: string,
+): NavigationNode[] | undefined {
+  const navs = detectNavigators(project);
+  if (navs.length === 0) return undefined;
+
+  // Detect NavigationContainer wrapper
+  let hasContainer = false;
+  for (const sourceFile of project.getSourceFiles()) {
+    sourceFile.forEachDescendant((node) => {
+      if (!Node.isJsxSelfClosingElement(node) && !Node.isJsxOpeningElement(node)) return false;
+      const tagName = getJSXTagName(node);
+      if (tagName === "NavigationContainer") {
+        hasContainer = true;
+        return true;
+      }
+      return false;
+    });
+  }
+
+  const nodes: NavigationNode[] = [];
+
+  for (const nav of navs) {
+    const screens = extractScreens(nav.tag, project, graph, rootDir);
+    if (screens.length === 0) continue;
+
+    const childNodes: NavigationNode[] = screens.map((s) => ({
+      type: "react-navigation",
+      routeName: s.routeName,
+      componentFile: s.componentFile,
+      componentResolution: s.componentResolution,
+      options: s.options,
+      children: [],
+    }));
+
+    nodes.push({
+      type: "react-navigation",
+      routeName: nav.tag.toLowerCase(),
+      children: childNodes,
+    });
+  }
+
+  return nodes.length > 0 ? nodes : undefined;
+}
+
+export function extractReactNavigation(
+  graph: Graph,
+  rootDir: string,
+  scanned: ScannedFile[],
+  project?: Project,
+): Graph {
+  if (!project) return graph;
+  const tree = buildReactNavigationTree(project, graph, scanned, rootDir);
+  if (!tree) return graph;
+
+  const existing = graph.navigationTree ?? [];
+  return { ...graph, navigationTree: [...existing, ...tree] };
 }

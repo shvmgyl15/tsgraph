@@ -52,6 +52,10 @@ export interface SymbolNode {
   isRNComponent?: boolean;
   isNavigationScreen?: boolean;
   platform?: RNPlatform;
+  platformVariants?: { ios?: string; android?: string; native?: string };
+  synthetic?: boolean;
+  baseFile?: string;
+  rnStyleSheets?: number;
   eventProductions?: Record<string, any>[];
   eventConsumptions?: Record<string, any>[];
 }
@@ -191,6 +195,20 @@ export interface ExpoConfig {
   plugins: string[];
 }
 
+export interface NativeModuleRef {
+  symbolName: string;
+  file: string;
+  moduleName: string;
+  kind: "legacy" | "turbo" | "native-component";
+}
+
+export interface RNAPIUsage {
+  symbolName: string;
+  file: string;
+  apis: string[];
+  reanimatedHooks?: string[];
+}
+
 export interface AppRouterNode {
   path: string;
   dir: string;
@@ -229,6 +247,8 @@ export interface Graph {
   navigationTree?: NavigationNode[];
   rnComponents?: RNComponentNode[];
   expoConfig?: ExpoConfig;
+  rnNativeModuleRefs?: NativeModuleRef[];
+  rnAPIUsages?: RNAPIUsage[];
 }
 
 let _nextId = 0;
