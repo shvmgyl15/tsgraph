@@ -1,7 +1,7 @@
 {
   "name": "@shvmgyl15/tsgraph",
-  "version": "0.6.0",
-  "description": "Local AST-based TypeScript/React/Next.js codebase indexer for AI coding agents",
+  "version": "0.7.0",
+  "description": "Local AST-based TypeScript/React/Next.js/React Native codebase indexer for AI coding agents",
   "license": "MIT",
   "type": "module",
   "bin": {

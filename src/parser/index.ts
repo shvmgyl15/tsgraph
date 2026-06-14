@@ -21,6 +21,7 @@ import { GRAPH_VERSION } from "../graph/types.js";
 import { loadEventConfig } from "../config.js";
 import type { ScannedFile } from "../scanner/index.js";
 import { extractNextJs } from "../nextjs/index.js";
+import { extractReactNative } from "../react-native/index.js";
 import { enrichSymbolsWithEvents } from "../extractors/events.js";
 
 function symbolId(file: string, name: string): string {
@@ -441,23 +442,26 @@ function extractHttpCalls(
   return calls;
 }
 
-function readDependencies(rootDir: string): Dependency[] {
+function readDependencyMap(rootDir: string): Record<string, string> {
   const pkgPath = path.join(rootDir, "package.json");
   try {
     const raw = fs.readFileSync(pkgPath, "utf-8");
     const pkg = JSON.parse(raw);
-    const deps: Dependency[] = [];
-    const allDeps: Record<string, string> = {
-      ...pkg.dependencies,
-      ...pkg.devDependencies,
+    return {
+      ...(pkg.dependencies || {}),
+      ...(pkg.devDependencies || {}),
     };
-    for (const [module, version] of Object.entries(allDeps)) {
-      deps.push({ module, version: String(version) });
-    }
-    return deps;
   } catch {
-    return [];
+    return {};
   }
+}
+
+function readDependencies(rootDir: string): Dependency[] {
+  const allDeps = readDependencyMap(rootDir);
+  return Object.entries(allDeps).map(([module, version]) => ({
+    module,
+    version: String(version),
+  }));
 }
 
 function computePackageName(rootDir: string): string {
@@ -521,6 +525,7 @@ export function parseProject(rootDir: string, scanned: ScannedFile[]): Graph {
     allHttpCalls.push(...httpCalls);
   }
 
+  const depMap = readDependencyMap(rootDir);
   const dependencies = readDependencies(rootDir);
 
   const baseGraph: Graph = {
@@ -544,6 +549,7 @@ export function parseProject(rootDir: string, scanned: ScannedFile[]): Graph {
   };
 
   let graph = extractNextJs(baseGraph, rootDir, scanned);
+  graph = extractReactNative(graph, rootDir, scanned, depMap);
 
   // Enrich symbols with event boundary data (SSE subscribers, hook patterns)
   for (const sourceFile of project.getSourceFiles()) {

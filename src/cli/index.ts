@@ -57,7 +57,7 @@ function handleError(err: unknown) {
 
 program
   .name("tsgraph")
-  .description("Local AST-based TypeScript/React/Next.js codebase indexer")
+  .description("Local AST-based TypeScript/React/Next.js/React Native codebase indexer")
   .version("0.1.0");
 
 function buildManifest(rootDir: string, files: ScannedFile[]): void {

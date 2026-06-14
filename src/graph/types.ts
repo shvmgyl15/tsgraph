@@ -8,7 +8,11 @@ export type SymbolKind =
   | "type_alias"
   | "enum"
   | "var"
-  | "const";
+  | "const"
+  | "rn_component"
+  | "rn_screen"
+  | "rn_hook"
+  | "rn_native_module";
 
 export type ConcurrencyKind =
   | "promise_all"
@@ -23,6 +27,8 @@ export interface StructField {
   type: string;
   tag?: string;
 }
+
+export type RNPlatform = "ios" | "android" | "native" | "web" | "all";
 
 export interface SymbolNode {
   id: string;
@@ -43,6 +49,9 @@ export interface SymbolNode {
   isExported: boolean;
   isClientComponent?: boolean;
   isServerComponent?: boolean;
+  isRNComponent?: boolean;
+  isNavigationScreen?: boolean;
+  platform?: RNPlatform;
   eventProductions?: Record<string, any>[];
   eventConsumptions?: Record<string, any>[];
 }
@@ -144,6 +153,44 @@ export interface HttpCallEdge {
   hasDynamic: boolean;
 }
 
+export type RNComponentKind =
+  | "view"
+  | "text"
+  | "scroll"
+  | "flatlist"
+  | "sectionlist"
+  | "image"
+  | "pressable"
+  | "touchable"
+  | "modal"
+  | "textinput"
+  | "other";
+
+export interface RNComponentNode {
+  name: string;
+  kind: RNComponentKind;
+  file: string;
+  line: number;
+  props?: Record<string, string>;
+}
+
+export type NavigationType = "react-navigation" | "expo-router";
+
+export interface NavigationNode {
+  type: NavigationType;
+  routeName: string;
+  path?: string;
+  componentFile?: string;
+  options?: Record<string, unknown>;
+  children: NavigationNode[];
+}
+
+export interface ExpoConfig {
+  scheme?: string;
+  bundleId?: string;
+  plugins: string[];
+}
+
 export interface AppRouterNode {
   path: string;
   dir: string;
@@ -179,6 +226,9 @@ export interface Graph {
   errors: ErrorEdge[];
   httpCalls: HttpCallEdge[];
   appRouter?: AppRouterNode;
+  navigationTree?: NavigationNode[];
+  rnComponents?: RNComponentNode[];
+  expoConfig?: ExpoConfig;
 }
 
 let _nextId = 0;
@@ -294,6 +344,32 @@ export function makeHttpCallEdge(overrides?: Partial<HttpCallEdge>): HttpCallEdg
     url: "",
     staticSegments: [],
     hasDynamic: false,
+    ...overrides,
+  };
+}
+
+export function makeRNComponentNode(overrides?: Partial<RNComponentNode>): RNComponentNode {
+  return {
+    name: "",
+    kind: "other",
+    file: "",
+    line: 0,
+    ...overrides,
+  };
+}
+
+export function makeNavigationNode(overrides?: Partial<NavigationNode>): NavigationNode {
+  return {
+    type: "expo-router",
+    routeName: "",
+    children: [],
+    ...overrides,
+  };
+}
+
+export function makeExpoConfig(overrides?: Partial<ExpoConfig>): ExpoConfig {
+  return {
+    plugins: [],
     ...overrides,
   };
 }
