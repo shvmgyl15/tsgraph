@@ -458,3 +458,37 @@ export function extractReactNavigation(
   const existing = graph.navigationTree ?? [];
   return { ...graph, navigationTree: [...existing, ...tree] };
 }
+
+function flattenNavigationTree(
+  nodes: NavigationNode[],
+  parentPath: string = "",
+): Array<{ path: string; handler: string; file: string }> {
+  const result: Array<{ path: string; handler: string; file: string }> = [];
+  for (const node of nodes) {
+    const routePath = parentPath ? `${parentPath}/${node.routeName}` : node.routeName;
+    const componentFile = node.componentFile ?? "";
+    if (componentFile) {
+      result.push({ path: routePath, handler: node.routeName, file: componentFile });
+    }
+    if (node.children && node.children.length > 0) {
+      result.push(...flattenNavigationTree(node.children, routePath));
+    }
+  }
+  return result;
+}
+
+export function convertNavigationToRoutes(graph: Graph): Graph {
+  if (!graph.navigationTree || graph.navigationTree.length === 0) return graph;
+
+  const flat = flattenNavigationTree(graph.navigationTree);
+  const newRoutes = flat.map((r) => ({
+    method: "SCREEN",
+    path: `/${r.path}`,
+    handler: r.handler,
+    file: r.file,
+    line: 0,
+    source: "mobile" as const,
+  }));
+
+  return { ...graph, routes: [...graph.routes, ...newRoutes] };
+}

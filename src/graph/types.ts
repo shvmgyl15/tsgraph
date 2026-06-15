@@ -103,7 +103,7 @@ export interface HTTPRoute {
   handler: string;
   file: string;
   line: number;
-  source?: "page" | "api";
+  source?: "page" | "api" | "mobile";
 }
 
 export interface EnvRead {

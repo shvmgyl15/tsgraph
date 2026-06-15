@@ -2,7 +2,7 @@ import { Project } from "ts-morph";
 import type { Graph } from "../graph/types.js";
 import type { ScannedFile } from "../scanner/index.js";
 import { extractRNComponents } from "./components.js";
-import { extractExpoRouter, extractReactNavigation } from "./navigation.js";
+import { extractExpoRouter, extractReactNavigation, convertNavigationToRoutes } from "./navigation.js";
 import { extractExpoConfig } from "./expoConfig.js";
 import { extractPlatformSpecific } from "./platform.js";
 import {
@@ -60,6 +60,7 @@ export function extractReactNative(
   g = extractRNStyleUsages(g, project);
   g = extractNativeModuleRefs(g, project);
   g = extractRNAPIs(g, project);
+  g = convertNavigationToRoutes(g);
 
   return g;
 }
