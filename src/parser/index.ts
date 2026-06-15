@@ -173,6 +173,69 @@ function extractSymbols(
   return symbols;
 }
 
+/** Add a call edge when a CallExpression or NewExpression is encountered. */
+function _addCallEdgeForNode(
+  node: import("ts-morph").Node,
+  calls: CallEdge[],
+  callerSymbolId: string,
+  callerName: string,
+  filePath: string,
+): void {
+  if (Node.isCallExpression(node) || Node.isNewExpression(node)) {
+    const calleeRaw = node.getExpression().getText();
+    calls.push({
+      callerSymbolId,
+      callerName,
+      calleeRaw,
+      file: filePath,
+      line: node.getStartLineNumber(),
+    });
+  }
+}
+
+/** Add a call edge when a JSX element or JSX attribute value reference is encountered. */
+function _addJsxEdgeForNode(
+  node: import("ts-morph").Node,
+  calls: CallEdge[],
+  callerSymbolId: string,
+  callerName: string,
+  filePath: string,
+): void {
+  // JSX element rendering: <Button /> → calleeRaw: "Button", <Stack.Screen /> → "Stack.Screen"
+  if (Node.isJsxSelfClosingElement(node) || Node.isJsxOpeningElement(node)) {
+    const tagName = node.getTagNameNode();
+    if (tagName && (Node.isIdentifier(tagName) || Node.isPropertyAccessExpression(tagName))) {
+      calls.push({
+        callerSymbolId,
+        callerName,
+        calleeRaw: tagName.getText(),
+        file: filePath,
+        line: node.getStartLineNumber(),
+      });
+    }
+    return;
+  }
+
+  // JSX attribute value references: onClick={handler} → calleeRaw: "handler"
+  //                                 component={HomeScreen} → calleeRaw: "HomeScreen"
+  if (Node.isJsxAttribute(node)) {
+    const initializer = node.getInitializer();
+    if (initializer && Node.isJsxExpression(initializer)) {
+      const expr = initializer.getExpression();
+      if (expr && Node.isIdentifier(expr)) {
+        calls.push({
+          callerSymbolId,
+          callerName,
+          calleeRaw: expr.getText(),
+          file: filePath,
+          line: node.getStartLineNumber(),
+        });
+      }
+    }
+    return;
+  }
+}
+
 function extractCalls(
   sourceFile: SourceFile,
   filePath: string,
@@ -184,16 +247,8 @@ function extractCalls(
     if (!name) continue;
     const funcId = symbolId(filePath, name);
     func.forEachDescendant((node) => {
-      if (Node.isCallExpression(node) || Node.isNewExpression(node)) {
-        const calleeRaw = node.getExpression().getText();
-        calls.push({
-          callerSymbolId: funcId,
-          callerName: name,
-          calleeRaw,
-          file: filePath,
-          line: node.getStartLineNumber(),
-        });
-      }
+      _addCallEdgeForNode(node, calls, funcId, name, filePath);
+      _addJsxEdgeForNode(node, calls, funcId, name, filePath);
       return false;
     });
   }
@@ -206,16 +261,8 @@ function extractCalls(
       if (!mName) continue;
       const methodId = symbolId(filePath, `${clsName}.${mName}`);
       method.forEachDescendant((node) => {
-        if (Node.isCallExpression(node) || Node.isNewExpression(node)) {
-          const calleeRaw = node.getExpression().getText();
-          calls.push({
-            callerSymbolId: methodId,
-            callerName: mName,
-            calleeRaw,
-            file: filePath,
-            line: node.getStartLineNumber(),
-          });
-        }
+        _addCallEdgeForNode(node, calls, methodId, mName, filePath);
+        _addJsxEdgeForNode(node, calls, methodId, mName, filePath);
         return false;
       });
     }
@@ -230,16 +277,8 @@ function extractCalls(
       if (!Node.isArrowFunction(initializer) && !Node.isFunctionExpression(initializer)) continue;
       const declId = symbolId(filePath, name);
       initializer.forEachDescendant((node) => {
-        if (Node.isCallExpression(node) || Node.isNewExpression(node)) {
-          const calleeRaw = node.getExpression().getText();
-          calls.push({
-            callerSymbolId: declId,
-            callerName: name,
-            calleeRaw,
-            file: filePath,
-            line: node.getStartLineNumber(),
-          });
-        }
+        _addCallEdgeForNode(node, calls, declId, name, filePath);
+        _addJsxEdgeForNode(node, calls, declId, name, filePath);
         return false;
       });
     }

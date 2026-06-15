@@ -492,6 +492,97 @@ export function helper() {
     });
   });
 
+  it("creates call edges for JSX element tags", () => {
+    const dir = createTempDir();
+    writeFile(dir, "page.tsx", `
+const MyPage = () => {
+  return <Button />;
+};
+`);
+    const { files } = scanFiles(dir);
+    const graph = parseProject(dir, files);
+
+    const pageCalls = graph.calls.filter((c) => c.callerName === "MyPage");
+    expect(pageCalls.some((c) => c.calleeRaw === "Button")).toBe(true);
+
+    fs.rmSync(dir, { recursive: true });
+  });
+
+  it("creates call edges for namespaced JSX tags", () => {
+    const dir = createTempDir();
+    writeFile(dir, "page.tsx", `
+const MyPage = () => {
+  return <Stack.Screen />;
+};
+`);
+    const { files } = scanFiles(dir);
+    const graph = parseProject(dir, files);
+
+    const pageCalls = graph.calls.filter((c) => c.callerName === "MyPage");
+    expect(pageCalls.some((c) => c.calleeRaw === "Stack.Screen")).toBe(true);
+
+    fs.rmSync(dir, { recursive: true });
+  });
+
+  it("creates call edges for JSX attribute function references", () => {
+    const dir = createTempDir();
+    writeFile(dir, "page.tsx", `
+const MyPage = () => {
+  const handleClick = () => {};
+  return <Button onClick={handleClick} />;
+};
+`);
+    const { files } = scanFiles(dir);
+    const graph = parseProject(dir, files);
+
+    const pageCalls = graph.calls.filter((c) => c.callerName === "MyPage");
+    expect(pageCalls.some((c) => c.calleeRaw === "Button")).toBe(true);
+    expect(pageCalls.some((c) => c.calleeRaw === "handleClick")).toBe(true);
+
+    fs.rmSync(dir, { recursive: true });
+  });
+
+  it("creates call edges for navigator component props", () => {
+    const dir = createTempDir();
+    writeFile(dir, "App.tsx", `
+const App = () => {
+  return (
+    <Stack.Navigator>
+      <Stack.Screen name="Home" component={HomeScreen} />
+      <Stack.Screen name="Settings" component={SettingsScreen} />
+    </Stack.Navigator>
+  );
+};
+`);
+    const { files } = scanFiles(dir);
+    const graph = parseProject(dir, files);
+
+    const appCalls = graph.calls.filter((c) => c.callerName === "App");
+    expect(appCalls.some((c) => c.calleeRaw === "Stack.Navigator")).toBe(true);
+    expect(appCalls.some((c) => c.calleeRaw === "Stack.Screen")).toBe(true);
+    expect(appCalls.some((c) => c.calleeRaw === "HomeScreen")).toBe(true);
+    expect(appCalls.some((c) => c.calleeRaw === "SettingsScreen")).toBe(true);
+
+    fs.rmSync(dir, { recursive: true });
+  });
+
+  it("does not create call edges for string JSX attributes", () => {
+    const dir = createTempDir();
+    writeFile(dir, "page.tsx", `
+const MyPage = () => {
+  return <div className="container" />;
+};
+`);
+    const { files } = scanFiles(dir);
+    const graph = parseProject(dir, files);
+
+    // "container" is a string literal, not a reference — should not appear as calleeRaw
+    const containerCalls = graph.calls.filter((c) => c.calleeRaw === "container");
+    expect(containerCalls).toHaveLength(0);
+
+    fs.rmSync(dir, { recursive: true });
+  });
+
   it("handles empty project with no .ts files", () => {
     const dir = createTempDir();
     writeFile(dir, "README.md", "# Hello");
