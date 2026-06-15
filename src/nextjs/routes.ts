@@ -58,6 +58,7 @@ export function extractAPIRoutes(
           handler: rf.relativePath,
           file: rf.relativePath,
           line: func.getStartLineNumber(),
+          source: "api",
         });
       }
     } catch {

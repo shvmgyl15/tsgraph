@@ -26,6 +26,10 @@ export function extractPagesRouter(
     const ext = path.extname(rel);
     if (ext !== ".ts" && ext !== ".tsx" && ext !== ".js" && ext !== ".jsx") continue;
 
+    // Skip Next.js framework files (_app, _document, _error, etc.)
+    const basenameNoExt = path.basename(rel, ext);
+    if (basenameNoExt.startsWith("_")) continue;
+
     const route = pagePathToRoute(rel);
     if (!route) continue;
 
@@ -36,6 +40,7 @@ export function extractPagesRouter(
       handler: isApi ? `pages${route}` : rel,
       file: rel,
       line: 1,
+      source: isApi ? "api" : "page",
     });
   }
 
